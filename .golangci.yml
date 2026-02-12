@@ -1,0 +1,93 @@
+# golangci-lint configuration
+# See https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags: []
+  skip-dirs:
+    - examples
+
+linters:
+  enable:
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Vet examines Go source code
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis
+    - unused        # Check for unused code
+    - gofmt         # Check formatting
+    - goimports     # Check import formatting
+    - misspell      # Check for misspelled words
+    - revive        # Fast linter
+    - typecheck     # Type check
+    - unconvert     # Remove unnecessary conversions
+    - unparam       # Detect unused parameters
+    - goconst       # Detect repeated strings that could be constants
+
+linters-settings:
+  errcheck:
+    check-blank: false
+    check-type-assertions: false
+
+  govet:
+    check-shadowing: false
+
+  gofmt:
+    simplify: true
+
+  goimports:
+    local-prefixes: github.com/posit-dev/launcher-go-sdk
+
+  misspell:
+    locale: US
+
+  revive:
+    confidence: 0.8
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: redefines-builtin-id
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # Exclude some linters from running on test files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - goconst
+
+    # Allow blank identifier in examples
+    - path: examples/
+      linters:
+        - errcheck
+        - unused
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true

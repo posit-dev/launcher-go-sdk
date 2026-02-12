@@ -1,0 +1,84 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for the Launcher Go SDK
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please fill out the information below to help us understand your request.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: What problem does this feature solve? Why do you need this feature?
+      placeholder: |
+        I'm building a plugin for PBS and need to map custom resource types to PBS directives.
+        Currently, I have to manually parse and format these in my plugin code, which is error-prone.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this feature to work? Be as specific as possible.
+      placeholder: |
+        Add a ResourceMapper interface that plugins can implement to translate generic
+        resource requests into scheduler-specific formats:
+
+        ```go
+        type ResourceMapper interface {
+            MapResources(job *api.Job) (map[string]string, error)
+        }
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches have you considered? Why didn't they work?
+      placeholder: |
+        - Manually parsing in each plugin (current approach - repetitive)
+        - Using a configuration file (less flexible, harder to test)
+        - External library (adds dependency, not integrated with SDK)
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context, examples, or screenshots about the feature request here.
+        Are there similar features in other SDKs or libraries that we could reference?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you be willing to contribute this feature?
+      description: |
+        We evaluate external PRs on a case-by-case basis. If you're interested in contributing,
+        please wait for maintainer feedback before starting significant work.
+      options:
+        - "Yes, I'd like to implement this"
+        - "Maybe, depending on complexity"
+        - "No, just suggesting"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues and discussions to ensure this is not a duplicate
+          required: true
+        - label: I have provided a clear use case for this feature
+          required: true
