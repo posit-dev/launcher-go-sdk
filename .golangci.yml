@@ -19,13 +19,40 @@ linters:
     - misspell      # Check for misspelled words
     - revive        # Fast linter
     - unconvert     # Remove unnecessary conversions
-    - unparam       # Detect unused parameters
-    - goconst       # Detect repeated strings that could be constants
+    - errorlint     # Check error wrapping and comparison
+    - gosec         # Security static analysis
+    - gocritic      # Opinionated style and performance checks
+    - nilerr        # Detect returning nil instead of err
+    - nilnil        # Detect ambiguous (nil, nil) returns
+    - exhaustive    # Check exhaustiveness of enum switch statements
 
   settings:
     errcheck:
-      check-blank: false
-      check-type-assertions: false
+      check-blank: true
+      check-type-assertions: true
+
+    gosec:
+      excludes:
+        - G104  # Redundant with errcheck
+        - G114  # http.ListenAndServe — not relevant for a non-server library
+        - G301  # Directory permissions — overly opinionated for library code
+        - G302  # File permissions — overly opinionated for library code
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam        # Flags passing structs by value even when intentional
+        - unnamedResult    # Overly opinionated for a library with simple returns
+        - ifElseChain      # Style preference, not a correctness issue
+
+    exhaustive:
+      default-signifies-exhaustive: false
+      check:
+        - switch
+        - map
 
     misspell:
       locale: US
@@ -65,7 +92,6 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
-          - goconst
 
 formatters:
   enable:
