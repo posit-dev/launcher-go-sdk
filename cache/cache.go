@@ -1,0 +1,438 @@
+package cache
+
+import (
+	"container/list"
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/posit-dev/launcher-go-sdk/api"
+	"github.com/posit-dev/launcher-go-sdk/launcher"
+)
+
+// An in-memory or persistent cache of jobs that permits subscribing to granular
+// updates. This type is safe to use across multiple goroutines.
+type JobCache struct {
+	sync.RWMutex
+	lgr           *slog.Logger
+	store         jobStore
+	ch            chan *statusUpdate
+	updates       *subManager
+	updatesByID   map[string]*subManager
+	updatesByUser map[string]*subManager
+	done          chan struct{}
+}
+
+// NewJobCache returns a JobCache. When dir is empty, it uses a pure in-memory
+// store. Otherwise it writes persistent storage into that directory.
+func NewJobCache(ctx context.Context, lgr *slog.Logger, dir string) (*JobCache, error) {
+	r := &JobCache{
+		lgr:           lgr,
+		ch:            make(chan *statusUpdate, 64),
+		updatesByID:   make(map[string]*subManager),
+		updatesByUser: make(map[string]*subManager),
+		done:          make(chan struct{}),
+	}
+	if dir != "" {
+		store, err := newPersistentStore(dir)
+		if err != nil {
+			return nil, err
+		}
+		r.store = store
+	} else {
+		r.store = newInMemoryStore()
+	}
+	r.updates = &subManager{}
+	go func() {
+		r.lgr.Debug("Listening for job status updates")
+	poll:
+		select {
+		case <-ctx.Done():
+			break
+		case u, ok := <-r.ch:
+			if !ok {
+				break
+			}
+			r.lgr.Debug("Got status update; acquiring lock",
+				"id", u.ID, "user", u.User, "status", u.Status)
+			r.Lock()
+			notified := r.updates.Notify(u)
+			if mgr, ok := r.updatesByID[u.ID]; ok {
+				notified += mgr.Notify(u)
+			}
+			if mgr, ok := r.updatesByUser[u.User]; ok {
+				notified += mgr.Notify(u)
+			}
+			r.Unlock()
+			if notified == 0 {
+				r.lgr.Debug("No subscribers to notify")
+			} else {
+				r.lgr.Debug(
+					"Subscribers notified of status update",
+					"count", notified)
+			}
+			goto poll
+		}
+		closed := r.updates.Close()
+		for _, mgr := range r.updatesByID {
+			closed += mgr.Close()
+		}
+		for _, mgr := range r.updatesByUser {
+			closed += mgr.Close()
+		}
+		r.lgr.Debug("Removed remaining status update subscribers", "count",
+			closed)
+		r.done <- struct{}{}
+	}()
+	return r, nil
+}
+
+// Close sends any remaining status updates, closes open channels, and flushes
+// writes to disk.
+func (r *JobCache) Close() error {
+	r.lgr.Debug("Closing job cache")
+	close(r.ch)
+	<-r.done
+	if err := r.store.Close(); err != nil {
+		return fmt.Errorf(
+			"failed to close job cache, some jobs may be lost: %w",
+			err)
+	}
+	return nil
+}
+
+// Lookup passes a callback the cached job with a given id or returns an error.
+func (r *JobCache) Lookup(user string, id string, fn func(*api.Job)) error {
+	notfound := false
+	r.store.View(id, func(job *api.Job) {
+		if job == nil || (user != "*" && job.User != user) {
+			notfound = true
+			return
+		}
+		fn(job)
+	})
+	if !notfound {
+		return nil
+	}
+	if user == "*" {
+		return api.Errorf(api.CodeJobNotFound, "Job %s not found", id)
+	}
+	return api.Errorf(api.CodeJobNotFound, "Job %s not found for user %s", id,
+		user)
+}
+
+// AddOrUpdate either caches a copy of a given job object or updates an existing
+// one based on it. It then notifies any clients streaming updates.
+func (r *JobCache) AddOrUpdate(job *api.Job) error {
+	updated, err := r.store.Update(job.ID, func(cur *api.Job) *api.Job {
+		if cur == nil {
+			r.lgr.Debug("Added job to store", "id", job.ID,
+				"status", job.Status)
+			r.ch <- newStatusUpdateFromJob(job)
+			return job
+		}
+		if job.Status != cur.Status || job.StatusMsg != cur.StatusMsg {
+			r.ch <- newStatusUpdateFromJob(job)
+		}
+		return job
+	})
+	if updated {
+		// r.lgr.Debug("Updated job in store", "id", job.ID, "status",
+		// 	job.Status)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to write job to store: %w", err)
+	}
+	return nil
+}
+
+// Update passes a callback the cached job with a given id or returns an error.
+// The result of the callback is written back to the cache.
+func (r *JobCache) Update(user string, id string, fn func(*api.Job) *api.Job) error {
+	notfound := false
+	updated, err := r.store.Update(id, func(cur *api.Job) *api.Job {
+		if cur == nil || (user != "*" && cur.User != user) {
+			notfound = true
+			return cur
+		}
+		oldStatus, oldStatusMsg := cur.Status, cur.StatusMsg
+		job := fn(cur)
+		if job.Status != oldStatus || job.StatusMsg != oldStatusMsg {
+			r.ch <- newStatusUpdateFromJob(job)
+		}
+		return job
+	})
+	if err != nil {
+		return fmt.Errorf("failed to write job to store: %w", err)
+	}
+	if notfound {
+		return api.Errorf(api.CodeJobNotFound,
+			"Job %s not found for user %s", id, user)
+	}
+	if updated {
+		r.lgr.Debug("Updated job in store", "id", id)
+	}
+	return nil
+}
+
+// WriteJob can be used to implement Plugin.WriteJob().
+func (r *JobCache) WriteJob(w launcher.ResponseWriter, user string, id string) {
+	err := r.Lookup(user, id, func(job *api.Job) {
+		w.WriteJobs([]*api.Job{job})
+	})
+	if err != nil {
+		// This also prevents users from see others' jobs.
+		w.WriteError(err)
+		return
+	}
+}
+
+// WriteJobs can be used to implement Plugin.WriteJobs().
+func (r *JobCache) WriteJobs(w launcher.ResponseWriter, user string, filter *api.JobFilter) {
+	r.store.JobsForUser(user, filter, func(jobs []*api.Job) {
+		w.WriteJobs(jobs)
+	})
+}
+
+// RunningJobContext returns a context that is cancelled when a job is no longer
+// running. It is useful for implementing Plugin.GetJobOutput() and
+// Plugin.GetJobResourceUtil().
+func (r *JobCache) RunningJobContext(parent context.Context, user string, id string) (context.Context, error) {
+	var done bool
+	err := r.Lookup(user, id, func(job *api.Job) {
+		done = api.TerminalStatus(job.Status)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if done {
+		return nil, api.Errorf(api.CodeJobNotRunning,
+			"The job is not currently running")
+	}
+	// TODO: Is there a race here if the job ends between the lookup above
+	// and when we subscribe below?
+	ctx, cancel := context.WithCancel(parent)
+	ch := make(chan *statusUpdate, 1)
+	r.subscribeToID(ctx, id, ch)
+	go func() {
+	poll:
+		select {
+		case <-parent.Done():
+			return
+		case u, ok := <-ch:
+			if !ok || api.TerminalStatus(u.Status) {
+				cancel()
+				return
+			}
+		}
+		goto poll
+	}()
+	return ctx, nil
+}
+
+// StreamJobStatus can be used to implement Plugin.GetJobStatus().
+func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamResponseWriter, user string, id string) {
+	done := false
+	err := r.Lookup(user, id, func(job *api.Job) {
+		w.WriteJobStatus(api.JobID(job.ID), job.Status, job.StatusMsg)
+		// Break off early if we know there will be no further updates.
+		if api.TerminalStatus(job.Status) {
+			done = true
+			return
+		}
+	})
+	if err != nil {
+		// This also prevents users from see others' jobs.
+		w.WriteError(err)
+		return
+	}
+	if done {
+		return
+	}
+	ch := make(chan *statusUpdate, 1)
+	r.subscribeToID(ctx, id, ch)
+poll:
+	select {
+	case <-ctx.Done():
+		return
+	case j, ok := <-ch:
+		if !ok {
+			return
+		}
+		w.WriteJobStatus(api.JobID(j.ID), j.Status, j.StatusMsg)
+	}
+	goto poll
+}
+
+// StreamJobStatuses can be used to implement Plugin.GetJobStatuses().
+func (r *JobCache) StreamJobStatuses(ctx context.Context, w launcher.StreamResponseWriter, user string) {
+	r.store.JobsForUser(user, nil, func(jobs []*api.Job) {
+		for _, job := range jobs {
+			w.WriteJobStatus(api.JobID(job.ID), job.Status,
+				job.StatusMsg)
+		}
+	})
+	ch := make(chan *statusUpdate, 1)
+	r.subscribeToUser(ctx, user, ch)
+poll:
+	select {
+	case <-ctx.Done():
+		return
+	case j, ok := <-ch:
+		if !ok {
+			return
+		}
+		w.WriteJobStatus(api.JobID(j.ID), j.Status, j.StatusMsg)
+	}
+	goto poll
+}
+
+// All returns a read-only iterator over all jobs in the cache.
+func (r *JobCache) All(yield func(*api.Job) bool) {
+	r.store.Jobs("*", nil)(yield)
+}
+
+// subscribeToID registers a channel to receive notifications when the job with
+// the given ID change status. After the passed context is closed, notifications
+// will cease and the channel will be closed.
+func (r *JobCache) subscribeToID(ctx context.Context, id string, ch chan<- *statusUpdate) {
+	r.Lock()
+	defer r.Unlock()
+	mgr := r.updatesByID[id]
+	if mgr == nil {
+		mgr = &subManager{}
+		r.updatesByID[id] = mgr
+	}
+	mgr.Subscribe(ctx, ch)
+}
+
+// subscribeToUser registers a channel to receive notifications when any job
+// owned by the given user changes status. After the passed context is closed,
+// notifications will cease and the channel will be closed.
+func (r *JobCache) subscribeToUser(ctx context.Context, user string, ch chan<- *statusUpdate) {
+	r.Lock()
+	defer r.Unlock()
+	if user == "*" {
+		r.updates.Subscribe(ctx, ch)
+		r.lgr.Debug("Added subscription for all users", "count",
+			r.updates.Count())
+		return
+	}
+	mgr := r.updatesByUser[user]
+	if mgr == nil {
+		mgr = &subManager{}
+		r.updatesByUser[user] = mgr
+	}
+	mgr.Subscribe(ctx, ch)
+}
+
+// Prune returns an interator over "stale" jobs, i.e. those that (1) have a
+// terminal status; and (2) have not been updated in the given interval. When
+// the iterator finishes all yielded jobs are removed from the cache. The
+// iterator can be used to clean up external resources associated with the job
+// before they are deleted.
+func (r *JobCache) Prune(interval time.Duration) func(func(*api.Job) bool) {
+	cutoff := time.Now().Add(-interval)
+	terminal := &api.JobFilter{
+		Statuses: []string{
+			api.StatusCanceled, api.StatusFailed,
+			api.StatusFinished, api.StatusKilled,
+		},
+	}
+	return func(yield func(*api.Job) bool) {
+		var candidates []string
+		// TODO: Use range-over-func syntax after toolchain update:
+		r.store.Jobs("*", terminal)(func(job *api.Job) bool {
+			if job.LastUpdated == nil ||
+				job.LastUpdated.After(cutoff) {
+				return true
+			}
+			if !yield(job) {
+				return false
+			}
+			candidates = append(candidates, job.ID)
+			return true
+		})
+		for _, id := range candidates {
+			if err := r.store.Delete(id); err != nil {
+				r.lgr.Error("Failed to prune job", "id", id,
+					"error", err)
+			}
+		}
+	}
+}
+
+// Manages the lifecycle and notifications of individual subscriptions. This
+// type is *not* safe to use concurrently from multiple goroutines; you must
+// serialise operations that use it.
+type subManager struct {
+	// Note: we use a linked list internally because we're constantly adding
+	// and removing elements, and using a slice for that is icky.
+	subs list.List
+}
+
+// Count returns the number of subscriptions.
+func (s *subManager) Count() int {
+	return s.subs.Len()
+}
+
+// Subscribe registers a channel to receive notifications when jobs change
+// status. Notifications will not be sent after the passed context is cancelled
+// and the channel will be closed.
+func (s *subManager) Subscribe(ctx context.Context, ch chan<- *statusUpdate) {
+	s.subs.PushBack(&subscriber{ctx, ch})
+}
+
+// Notify sends the updated job status to existing subscribers, if any.
+func (s *subManager) Notify(u *statusUpdate) int {
+	elt := s.subs.Front()
+	notified := 0
+	for elt != nil {
+		sub := elt.Value.(*subscriber)
+		if sub.Context.Err() != nil {
+			close(sub.Channel)
+			next := elt.Next()
+			s.subs.Remove(elt)
+			elt = next
+			continue
+		}
+		sub.Channel <- u
+		notified++
+		elt = elt.Next()
+	}
+	return notified
+}
+
+// Close closes the channels of any remaining subscribers and returns the number
+// of channels closed this way. It does not send an update.
+func (s *subManager) Close() int {
+	var closed int
+	elt := s.subs.Front()
+	for elt != nil {
+		sub := s.subs.Remove(elt)
+		close(sub.(*subscriber).Channel)
+		elt = s.subs.Front()
+		closed++
+	}
+	return closed
+}
+
+type statusUpdate struct {
+	ID        string
+	User      string
+	Status    string
+	StatusMsg string
+}
+
+func newStatusUpdateFromJob(job *api.Job) *statusUpdate {
+	return &statusUpdate{
+		job.ID, job.User, job.Status, job.StatusMsg,
+	}
+}
+
+type subscriber struct {
+	Context context.Context
+	Channel chan<- *statusUpdate
+}

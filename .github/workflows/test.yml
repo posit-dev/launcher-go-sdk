@@ -1,0 +1,76 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: ['1.24', '1.25']
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ matrix.go }}
+
+    - name: Install just
+      uses: extractions/setup-just@v3
+
+    - name: Download dependencies
+      run: just download
+
+    - name: Verify dependencies
+      run: just verify
+
+    - name: Run tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Check test coverage
+      run: |
+        total=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+        echo "Total coverage: ${total}%"
+        # Fail if coverage is below 15%
+        # Use awk for floating point comparison (works on all platforms)
+        if [ "$(echo "$total 15" | awk '{print ($1 < $2)}')" -eq 1 ]; then
+          echo "Coverage ${total}% is below minimum 15%"
+          exit 1
+        fi
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.go == '1.25'
+      uses: codecov/codecov-action@v5
+      with:
+        files: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  test-examples:
+    name: Test Examples
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25'
+
+    - name: Install just
+      uses: extractions/setup-just@v3
+
+    - name: Build examples
+      run: just build-examples

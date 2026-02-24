@@ -1,0 +1,112 @@
+# golangci-lint v2 configuration
+# See https://golangci-lint.run/docs/
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags: []
+
+linters:
+  default: none
+  enable:
+    - errcheck      # Check for unchecked errors
+    - govet         # Vet examines Go source code
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis (includes former gosimple)
+    - unused        # Check for unused code
+    - misspell      # Check for misspelled words
+    - revive        # Fast linter
+    - unconvert     # Remove unnecessary conversions
+    - errorlint     # Check error wrapping and comparison
+    - gosec         # Security static analysis
+    - gocritic      # Opinionated style and performance checks
+    - nilerr        # Detect returning nil instead of err
+    - nilnil        # Detect ambiguous (nil, nil) returns
+    - exhaustive    # Check exhaustiveness of enum switch statements
+
+  settings:
+    errcheck:
+      check-blank: true
+      check-type-assertions: true
+
+    gosec:
+      excludes:
+        - G104  # Redundant with errcheck
+        - G114  # http.ListenAndServe — not relevant for a non-server library
+        - G301  # Directory permissions — overly opinionated for library code
+        - G302  # File permissions — overly opinionated for library code
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam        # Flags passing structs by value even when intentional
+        - unnamedResult    # Overly opinionated for a library with simple returns
+        - ifElseChain      # Style preference, not a correctness issue
+
+    exhaustive:
+      default-signifies-exhaustive: false
+      check:
+        - switch
+        - map
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+  exclusions:
+    presets: []
+    paths:
+      - examples
+    rules:
+      # Exclude some linters from running on test files
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/posit-dev/launcher-go-sdk
+
+output:
+  formats:
+    text:
+      print-issued-lines: true
+      print-linter-name: true
+      colors: true
