@@ -89,10 +89,11 @@ go mod download
 
 5. **Install development tools** (optional but recommended):
 ```bash
-just install-tools
+just install-tools          # golangci-lint, goimports
+brew install difftastic yq  # structural diffs, YAML processing
 ```
 
-This installs `golangci-lint`, `goimports`, and other development tools.
+This installs `golangci-lint`, `goimports`, and other development tools. `difftastic` provides syntax-aware diffs for Go, and `yq` is a YAML processor useful for working with CI and linter configs.
 
 6. **Verify setup**:
 ```bash
