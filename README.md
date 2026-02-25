@@ -222,7 +222,8 @@ just pre-commit           # Quick checks before committing
 
 Install development tools:
 ```bash
-just install-tools
+just install-tools          # golangci-lint, goimports
+brew install difftastic yq  # structural diffs, YAML processing
 ```
 
 ### Running tests
