@@ -256,7 +256,7 @@ type BootstrapResponse struct {
 }
 
 // NewBootstrapResponse creates a new bootstrap response.
-func NewBootstrapResponse(requestID uint64, responseID uint64) *BootstrapResponse {
+func NewBootstrapResponse(requestID, responseID uint64) *BootstrapResponse {
 	base := responseBase{responseBootstrap, requestID, responseID}
 	return &BootstrapResponse{base, api.APIVersion}
 }
@@ -268,7 +268,7 @@ type JobStateResponse struct {
 }
 
 // NewJobStateResponse creates a new job state response.
-func NewJobStateResponse(requestID uint64, responseID uint64, jobs []*api.Job) *JobStateResponse {
+func NewJobStateResponse(requestID, responseID uint64, jobs []*api.Job) *JobStateResponse {
 	base := responseBase{responseJobState, requestID, responseID}
 	if jobs == nil {
 		// Ensure we never send null.
@@ -310,7 +310,7 @@ type JobOutputResponse struct {
 }
 
 // NewJobOutputStreamResponse creates a new job output stream response.
-func NewJobOutputStreamResponse(requestID uint64, responseID uint64) *JobOutputResponse {
+func NewJobOutputStreamResponse(requestID, responseID uint64) *JobOutputResponse {
 	base := responseBase{responseJobOutput, requestID, responseID}
 	return &JobOutputResponse{responseBase: base}
 }
@@ -350,7 +350,7 @@ type ControlJobResponse struct {
 }
 
 // NewControlJobResponse creates a new control job response.
-func NewControlJobResponse(requestID uint64, responseID uint64, complete bool, msg string) *ControlJobResponse {
+func NewControlJobResponse(requestID, responseID uint64, complete bool, msg string) *ControlJobResponse {
 	base := responseBase{responseControlJob, requestID, responseID}
 	return &ControlJobResponse{
 		responseBase: base, Msg: msg, Complete: complete,
@@ -366,7 +366,7 @@ type JobNetworkResponse struct {
 }
 
 // NewJobNetworkResponse creates a new job network response.
-func NewJobNetworkResponse(requestID uint64, responseID uint64, host string, addr []string) *JobNetworkResponse {
+func NewJobNetworkResponse(requestID, responseID uint64, host string, addr []string) *JobNetworkResponse {
 	base := responseBase{responseJobNetwork, requestID, responseID}
 	if addr == nil {
 		addr = []string{} // Ensure we never send null.
@@ -397,7 +397,7 @@ type ClusterInfo struct {
 }
 
 // NewClusterInfoResponse creates a new cluster info response.
-func NewClusterInfoResponse(requestID uint64, responseID uint64, cluster ClusterInfo) *ClusterInfoResponse {
+func NewClusterInfoResponse(requestID, responseID uint64, cluster ClusterInfo) *ClusterInfoResponse {
 	base := responseBase{responseClusterInfo, requestID, responseID}
 	if cluster.Configs == nil {
 		cluster.Configs = []api.JobConfig{}
@@ -421,7 +421,7 @@ type MultiClusterInfoResponse struct {
 }
 
 // NewMultiClusterInfoResponse creates a new multicluster info response.
-func NewMultiClusterInfoResponse(requestID uint64, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
+func NewMultiClusterInfoResponse(requestID, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
 	base := responseBase{responseMultiClusterInfo, requestID, responseID}
 	if clusters == nil {
 		clusters = []ClusterInfo{} // Ensure we never send null.
@@ -433,7 +433,7 @@ func NewMultiClusterInfoResponse(requestID uint64, responseID uint64, clusters [
 type SetLoadBalancerNodesResponse = responseBase
 
 // NewSetLoadBalancerNodesResponse creates a new set load balanced nodes response.
-func NewSetLoadBalancerNodesResponse(requestID uint64, responseID uint64) *SetLoadBalancerNodesResponse {
+func NewSetLoadBalancerNodesResponse(requestID, responseID uint64) *SetLoadBalancerNodesResponse {
 	return &SetLoadBalancerNodesResponse{
 		responseSetLoadBalancerNodes, requestID, responseID,
 	}

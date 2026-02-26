@@ -290,7 +290,7 @@ func FindJobsByUser(jobs []*api.Job, user string) []*api.Job {
 
 // contains checks if a string contains a substring.
 func contains(s, substr string) bool {
-	return len(substr) == 0 || len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsRec(s, substr))
+	return substr == "" || len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsRec(s, substr))
 }
 
 func containsRec(s, substr string) bool {

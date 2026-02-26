@@ -199,7 +199,7 @@ func (f *JobFilter) Includes(job *Job) bool {
 	if f.EndTime != nil && job.Submitted.After(*f.EndTime) {
 		return false
 	}
-	match := !(len(f.Statuses) > 0)
+	match := len(f.Statuses) == 0
 	for _, status := range f.Statuses {
 		if job.Status == status {
 			match = true

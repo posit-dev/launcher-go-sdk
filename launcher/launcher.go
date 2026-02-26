@@ -518,7 +518,7 @@ func (w *defaultResponseWriter) WriteJobOutput(output string, outputType api.Job
 	return w.sendResponse(resp)
 }
 
-func (w *defaultResponseWriter) WriteJobResourceUtil(cpuPercent float64, cpuTime float64, residentMem float64, virtualMem float64) error {
+func (w *defaultResponseWriter) WriteJobResourceUtil(cpuPercent, cpuTime, residentMem, virtualMem float64) error {
 	rid := w.req.ID()
 	resp := protocol.NewJobResourceResponse(nextResponseID(), false)
 	resp.Sequences = []protocol.StreamSequence{
@@ -570,8 +570,8 @@ func (w *defaultResponseWriter) WriteClusterInfo(o ClusterOptions) error {
 
 func (w *defaultResponseWriter) WriteClusters(o []ClusterOptions) error {
 	clusters := make([]protocol.ClusterInfo, len(o))
-	for i, c := range o {
-		clusters[i] = c.toProtocol()
+	for i := range o {
+		clusters[i] = o[i].toProtocol()
 	}
 	resp := protocol.NewMultiClusterInfoResponse(w.req.ID(), nextResponseID(),
 		clusters)

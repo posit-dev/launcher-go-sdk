@@ -74,7 +74,7 @@ func (s *inMemoryStore) View(id string, fn func(*api.Job)) error {
 func (s *inMemoryStore) Update(id string, fn func(*api.Job) *api.Job) (bool, error) {
 	s.Lock()
 	defer s.Unlock()
-	var new *api.Job
+	var result *api.Job
 	cur, ok := s.jobs[id]
 	// Pass a snapshot to fn so it cannot mutate the stored object directly.
 	// This also lets syncJob2 correctly diff cur against the callback's result.
@@ -88,14 +88,14 @@ func (s *inMemoryStore) Update(id string, fn func(*api.Job) *api.Job) (bool, err
 		return false, nil
 	}
 	if !ok {
-		// Work from a copy to ensure ownership.
-		new := &api.Job{}
-		*new = *in
-		s.jobs[id] = new
+		// Work from a clone to ensure ownership.
+		clone := &api.Job{}
+		*clone = *in
+		s.jobs[id] = clone
 		return false, nil
 	}
-	new, updated := syncJob2(cur, in)
-	s.jobs[id] = new
+	result, updated := syncJob2(cur, in)
+	s.jobs[id] = result
 	return updated, nil
 }
 
@@ -156,7 +156,7 @@ func (s *inMemoryStore) Delete(id string) error {
 // syncJob2 updates the current job with fields from an input. This is necessary
 // because semantically only a subset of job fields can actually be updated.
 // Returns the updated job and a boolean indicating whether a change was made.
-func syncJob2(job *api.Job, in *api.Job) (*api.Job, bool) {
+func syncJob2(job, in *api.Job) (*api.Job, bool) {
 	updated := false
 	if in.Status != job.Status {
 		job.Status = in.Status

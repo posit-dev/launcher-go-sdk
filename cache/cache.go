@@ -16,7 +16,7 @@ import (
 // JobCache is an in-memory cache of jobs that permits subscribing to granular updates.
 // This type is safe to use across multiple goroutines.
 type JobCache struct {
-	sync.RWMutex
+	mu            sync.RWMutex
 	lgr           *slog.Logger
 	store         jobStore
 	ch            chan *statusUpdate
@@ -49,7 +49,7 @@ func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
 			}
 			r.lgr.Debug("Got status update; acquiring lock",
 				"id", u.ID, "user", u.User, "status", u.Status)
-			r.Lock()
+			r.mu.Lock()
 			notified := r.updates.Notify(u)
 			if mgr, ok := r.updatesByID[u.ID]; ok {
 				notified += mgr.Notify(u)
@@ -57,7 +57,7 @@ func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
 			if mgr, ok := r.updatesByUser[u.User]; ok {
 				notified += mgr.Notify(u)
 			}
-			r.Unlock()
+			r.mu.Unlock()
 			if notified == 0 {
 				r.lgr.Debug("No subscribers to notify")
 			} else {
@@ -93,7 +93,7 @@ func (r *JobCache) Close() error {
 }
 
 // Lookup passes a callback the cached job with a given id or returns an error.
-func (r *JobCache) Lookup(user string, id string, fn func(*api.Job)) error {
+func (r *JobCache) Lookup(user, id string, fn func(*api.Job)) error {
 	notfound := false
 	r.store.View(id, func(job *api.Job) {
 		if job == nil || (user != "*" && job.User != user) {
@@ -115,7 +115,8 @@ func (r *JobCache) Lookup(user string, id string, fn func(*api.Job)) error {
 // AddOrUpdate either caches a copy of a given job object or updates an existing
 // one based on it. It then notifies any clients streaming updates.
 func (r *JobCache) AddOrUpdate(job *api.Job) error {
-	updated, err := r.store.Update(job.ID, func(cur *api.Job) *api.Job {
+	// updated flag not needed; new-vs-existing is already logged inside the callback.
+	_, err := r.store.Update(job.ID, func(cur *api.Job) *api.Job {
 		if cur == nil {
 			r.lgr.Debug("Added job to store", "id", job.ID,
 				"status", job.Status)
@@ -127,10 +128,6 @@ func (r *JobCache) AddOrUpdate(job *api.Job) error {
 		}
 		return job
 	})
-	if updated {
-		// r.lgr.Debug("Updated job in store", "id", job.ID, "status",
-		// 	job.Status)
-	}
 	if err != nil {
 		return fmt.Errorf("failed to write job to store: %w", err)
 	}
@@ -139,7 +136,7 @@ func (r *JobCache) AddOrUpdate(job *api.Job) error {
 
 // Update passes a callback the cached job with a given id or returns an error.
 // The result of the callback is written back to the cache.
-func (r *JobCache) Update(user string, id string, fn func(*api.Job) *api.Job) error {
+func (r *JobCache) Update(user, id string, fn func(*api.Job) *api.Job) error {
 	notfound := false
 	updated, err := r.store.Update(id, func(cur *api.Job) *api.Job {
 		if cur == nil || (user != "*" && cur.User != user) {
@@ -167,7 +164,7 @@ func (r *JobCache) Update(user string, id string, fn func(*api.Job) *api.Job) er
 }
 
 // WriteJob can be used to implement Plugin.WriteJob().
-func (r *JobCache) WriteJob(w launcher.ResponseWriter, user string, id string) {
+func (r *JobCache) WriteJob(w launcher.ResponseWriter, user, id string) {
 	err := r.Lookup(user, id, func(job *api.Job) {
 		w.WriteJobs([]*api.Job{job})
 	})
@@ -188,7 +185,7 @@ func (r *JobCache) WriteJobs(w launcher.ResponseWriter, user string, filter *api
 // RunningJobContext returns a context that is canceled when a job is no longer
 // running. It is useful for implementing Plugin.GetJobOutput() and
 // Plugin.GetJobResourceUtil().
-func (r *JobCache) RunningJobContext(parent context.Context, user string, id string) (context.Context, error) {
+func (r *JobCache) RunningJobContext(parent context.Context, user, id string) (context.Context, error) {
 	var done bool
 	err := r.Lookup(user, id, func(job *api.Job) {
 		done = api.TerminalStatus(job.Status)
@@ -222,7 +219,7 @@ func (r *JobCache) RunningJobContext(parent context.Context, user string, id str
 }
 
 // StreamJobStatus can be used to implement Plugin.GetJobStatus().
-func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamResponseWriter, user string, id string) {
+func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamResponseWriter, user, id string) {
 	done := false
 	err := r.Lookup(user, id, func(job *api.Job) {
 		w.WriteJobStatus(api.JobID(job.ID), job.Status, job.StatusMsg)
@@ -287,8 +284,8 @@ func (r *JobCache) All(yield func(*api.Job) bool) {
 // the given ID change status. After the passed context is closed, notifications
 // will cease and the channel will be closed.
 func (r *JobCache) subscribeToID(ctx context.Context, id string, ch chan<- *statusUpdate) {
-	r.Lock()
-	defer r.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	mgr := r.updatesByID[id]
 	if mgr == nil {
 		mgr = &subManager{}
@@ -301,8 +298,8 @@ func (r *JobCache) subscribeToID(ctx context.Context, id string, ch chan<- *stat
 // owned by the given user changes status. After the passed context is closed,
 // notifications will cease and the channel will be closed.
 func (r *JobCache) subscribeToUser(ctx context.Context, user string, ch chan<- *statusUpdate) {
-	r.Lock()
-	defer r.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if user == "*" {
 		r.updates.Subscribe(ctx, ch)
 		r.lgr.Debug("Added subscription for all users", "count",
