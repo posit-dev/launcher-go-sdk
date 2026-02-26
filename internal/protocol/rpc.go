@@ -37,12 +37,20 @@ func requestFromJSON(buf []byte) (Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal(buf, req) // We know this can be unmarshalled.
-	return req.(Request), nil
+	_ = json.Unmarshal(buf, req) //nolint:errcheck // We know this can be unmarshalled.
+	r, ok := req.(Request)
+	if !ok {
+		panic("requestForType returned a non-Request type")
+	}
+	return r, nil
 }
 
 func requestForType(rt requestType) (interface{}, error) {
 	switch rt {
+	case requestHeartbeat:
+		// Heartbeat is handled before requestForType is called; reaching
+		// here indicates a programming error.
+		return nil, fmt.Errorf("%w: unexpected heartbeat in requestForType", ErrUnknownRequestType)
 	case requestBootstrap:
 		return &BootstrapRequest{}, nil
 	case requestSubmitJob:

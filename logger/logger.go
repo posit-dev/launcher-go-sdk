@@ -148,16 +148,18 @@ func formatAttr(group string, attr slog.Attr) string {
 			return prefix + "true"
 		}
 		return prefix + "false"
-	case slog.KindString, slog.KindFloat64, slog.KindInt64, slog.KindUint64:
+	case slog.KindString, slog.KindFloat64, slog.KindInt64, slog.KindUint64,
+		slog.KindDuration, slog.KindTime:
 		return prefix + value.String()
 	case slog.KindAny:
 		if err, ok := value.Any().(error); ok {
 			return prefix + err.Error()
 		}
 		fallthrough
-	default:
+	case slog.KindGroup, slog.KindLogValuer:
 		return ""
 	}
+	return ""
 }
 
 const timestampFormat = "2006-01-02T15:04:05.000000Z"

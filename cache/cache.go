@@ -379,7 +379,10 @@ func (s *subManager) Notify(u *statusUpdate) int {
 	elt := s.subs.Front()
 	notified := 0
 	for elt != nil {
-		sub := elt.Value.(*subscriber)
+		sub, ok := elt.Value.(*subscriber)
+		if !ok {
+			panic("unexpected type in subscriber list")
+		}
 		if sub.Context.Err() != nil {
 			close(sub.Channel)
 			next := elt.Next()
@@ -400,8 +403,12 @@ func (s *subManager) Close() int {
 	var closed int
 	elt := s.subs.Front()
 	for elt != nil {
-		sub := s.subs.Remove(elt)
-		close(sub.(*subscriber).Channel)
+		removed := s.subs.Remove(elt)
+		sub, ok := removed.(*subscriber)
+		if !ok {
+			panic("unexpected type in subscriber list")
+		}
+		close(sub.Channel)
 		elt = s.subs.Front()
 		closed++
 	}

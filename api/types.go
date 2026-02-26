@@ -65,6 +65,8 @@ const (
 
 func (e ErrCode) String() string {
 	switch e {
+	case CodeUnknown:
+		return "an error occurred"
 	case CodeRequestNotSupported:
 		return "not supported"
 	case CodeInvalidRequest:
@@ -85,9 +87,8 @@ func (e ErrCode) String() string {
 		return "job control failure"
 	case CodeUnsupportedVersion:
 		return "unsupported version"
-	default:
-		return "an error occurred"
 	}
+	return "an error occurred"
 }
 
 // Error is a structured error representation for Launcher plugins.
@@ -244,9 +245,10 @@ func (o JobOutput) String() string {
 		return "stdout"
 	case OutputStderr:
 		return "stderr"
-	default: // OutputBoth
+	case OutputBoth:
 		return "mixed"
 	}
+	return "mixed"
 }
 
 // MarshalText implements `encoding.TextMarshaler`.
@@ -545,9 +547,10 @@ func (o JobOperation) ValidForStatus() string {
 		return StatusRunning
 	case OperationResume:
 		return StatusSuspended
-	default: // OperationCancel
+	case OperationCancel:
 		return StatusPending
 	}
+	return StatusPending
 }
 
 func (o JobOperation) String() string {
@@ -560,9 +563,10 @@ func (o JobOperation) String() string {
 		return "Stop"
 	case OperationKill:
 		return "Kill"
-	default: // OperationCancel
+	case OperationCancel:
 		return "Cancel"
 	}
+	return "Cancel"
 }
 
 // Mount is a volume mounted into a Job.
@@ -587,8 +591,11 @@ func (m *Mount) String() string {
 	if m.ReadOnly {
 		opt = "ro"
 	}
-	return fmt.Sprintf("%s:%s:%s", m.Source.Source.(HostMount).Path, m.Path,
-		opt)
+	host, ok := m.Source.Source.(HostMount)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%s:%s:%s", host.Path, m.Path, opt)
 }
 
 // Set implements flag.Value by converting a text representation of the form

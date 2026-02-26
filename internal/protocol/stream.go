@@ -50,7 +50,10 @@ func (e *Encoder) write(msg []byte) error {
 	if len(msg) > e.maxSize {
 		return ErrMsgTooLarge
 	}
-	header := uint32(len(msg))
+	if len(msg) > int(^uint32(0)) {
+		return ErrMsgTooLarge
+	}
+	header := uint32(len(msg)) //nolint:gosec // bounds checked above
 	if err := binary.Write(e.w, binary.BigEndian, header); err != nil {
 		return err
 	}
