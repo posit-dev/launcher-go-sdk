@@ -23,7 +23,7 @@ type Request interface {
 func requestFromJSON(buf []byte) (Request, error) {
 	var base BaseRequest
 	if err := json.Unmarshal(buf, &base); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMsgInvalid, err)
+		return nil, fmt.Errorf("%w: %v", ErrMsgInvalid, err) //nolint:errorlint // intentionally wrapping only the sentinel error
 	}
 	if !base.Valid() {
 		return nil, fmt.Errorf("%w: %s", ErrMsgInvalid, string(buf))

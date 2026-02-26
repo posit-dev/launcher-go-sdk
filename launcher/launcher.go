@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -485,7 +486,8 @@ func (w *defaultResponseWriter) WriteErrorf(code api.ErrCode, format string, a .
 
 func (w *defaultResponseWriter) WriteError(err error) error {
 	resp := protocol.NewErrorResponse(w.req.ID(), api.CodeUnknown, err.Error())
-	if werr, ok := err.(*api.Error); ok {
+	var werr *api.Error
+	if errors.As(err, &werr) {
 		resp.Code = werr.Code
 	}
 	return w.sendResponse(resp)

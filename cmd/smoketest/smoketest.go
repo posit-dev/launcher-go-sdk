@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -135,8 +136,11 @@ func (st *smokeTest) initialize() error {
 		err := st.cmd.Wait()
 		if err == nil {
 			fmt.Println("Plugin exited normally")
-		} else if exitErr, ok := err.(*exec.ExitError); ok {
-			fmt.Fprintf(os.Stderr, "Plugin exited with code %d\n", exitErr.ExitCode())
+		} else {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				fmt.Fprintf(os.Stderr, "Plugin exited with code %d\n", exitErr.ExitCode())
+			}
 		}
 	}()
 

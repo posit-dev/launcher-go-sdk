@@ -1,6 +1,7 @@
 package plugintest
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
@@ -66,7 +67,8 @@ func (m *MockResponseWriter) WriteErrorf(code api.ErrCode, format string, a ...i
 func (m *MockResponseWriter) WriteError(err error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if apiErr, ok := err.(*api.Error); ok {
+	var apiErr *api.Error
+	if errors.As(err, &apiErr) {
 		m.Errors = append(m.Errors, apiErr)
 	} else {
 		m.Errors = append(m.Errors, &api.Error{Code: api.CodeUnknown, Msg: err.Error()})

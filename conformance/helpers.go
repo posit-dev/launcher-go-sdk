@@ -118,7 +118,7 @@ func WaitForStatus(ctx context.Context, p launcher.Plugin, user, id, status stri
 		case <-ticker.C:
 			job, apiErr := GetJob(p, user, id, nil)
 			if apiErr != nil {
-				return nil, fmt.Errorf("GetJob returned error: %v", apiErr)
+				return nil, fmt.Errorf("GetJob returned error: %w", apiErr)
 			}
 			if job == nil {
 				return nil, fmt.Errorf("GetJob returned no job for ID %s", id)
@@ -150,7 +150,7 @@ func WaitForTerminalStatus(ctx context.Context, p launcher.Plugin, user, id stri
 		case <-ticker.C:
 			job, apiErr := GetJob(p, user, id, nil)
 			if apiErr != nil {
-				return nil, fmt.Errorf("GetJob returned error: %v", apiErr)
+				return nil, fmt.Errorf("GetJob returned error: %w", apiErr)
 			}
 			if job == nil {
 				return nil, fmt.Errorf("GetJob returned no job for ID %s", id)

@@ -131,7 +131,7 @@ func (d *Decoder) MsgSize() uint32 {
 
 // Err returns the most recently encountered error, or nil if there is none.
 func (d *Decoder) Err() error {
-	if d.err == nil || d.err == io.EOF {
+	if d.err == nil || d.err == io.EOF { //nolint:errorlint // exact match intentional; wrapped EOF should not be suppressed
 		return nil
 	}
 	return fmt.Errorf("failed to read from stream: %w", d.err)
