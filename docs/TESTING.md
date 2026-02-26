@@ -239,7 +239,7 @@ func TestSubmitJob(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Create test job
@@ -272,7 +272,7 @@ func TestGetJob(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Add a job to cache
@@ -305,7 +305,7 @@ func TestGetJob_NotFound(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Execute (job doesn't exist)
@@ -324,7 +324,7 @@ func TestGetJobs_FilterByStatus(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Add multiple jobs with different statuses
@@ -361,7 +361,7 @@ func TestControlJob_Kill(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Add a running job
@@ -395,7 +395,7 @@ func TestControlJob_InvalidState(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Add a finished job
@@ -424,7 +424,7 @@ func TestGetJobStatus(t *testing.T) {
     defer cancel()
 
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Add a job
@@ -476,7 +476,7 @@ func TestGetJobOutput(t *testing.T) {
     defer cancel()
 
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Add a job
@@ -516,7 +516,7 @@ func TestClusterInfo(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Execute
@@ -545,54 +545,6 @@ func TestClusterInfo(t *testing.T) {
 
 Integration tests verify the plugin works with real schedulers.
 
-### Testing with real cache
-
-```go
-func TestSubmitJob_WithPersistence(t *testing.T) {
-    // Create temporary directory
-    tmpDir := t.TempDir()
-
-    // Setup with persistent cache
-    ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
-    cache, err := cache.NewJobCache(ctx, lgr, tmpDir)
-    if err != nil {
-        t.Fatalf("Failed to create cache: %v", err)
-    }
-    defer cache.Close()
-
-    plugin := &MyPlugin{cache: cache}
-
-    // Submit job
-    job := plugintest.NewJob().
-        WithUser("alice").
-        WithCommand("echo hello").
-        Build()
-
-    w := plugintest.NewMockResponseWriter()
-    plugin.SubmitJob(w, "alice", job)
-
-    plugintest.AssertNoError(t, w)
-    jobID := w.LastJobs()[0].ID
-
-    // Create new cache instance (simulates restart)
-    cache2, err := cache.NewJobCache(ctx, lgr, tmpDir)
-    if err != nil {
-        t.Fatalf("Failed to create cache: %v", err)
-    }
-    defer cache2.Close()
-
-    plugin2 := &MyPlugin{cache: cache2}
-
-    // Verify job persisted
-    w2 := plugintest.NewMockResponseWriter()
-    plugin2.GetJob(w2, "alice", api.JobID(jobID), nil)
-
-    plugintest.AssertNoError(t, w2)
-    plugintest.AssertJobCount(t, w2, 1)
-}
-```
-
 ### Testing with external scheduler
 
 ```go
@@ -606,7 +558,7 @@ func TestSubmitJob_RealSlurm(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", true, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
 
     // Create real Slurm client
     client := NewSlurmClient("/usr/bin")
@@ -699,7 +651,7 @@ func TestControlJob_Operations(t *testing.T) {
             // Setup
             ctx := context.Background()
             lgr := logger.MustNewLogger("test", false, "")
-            cache, _ := cache.NewJobCache(ctx, lgr, "")
+            cache, _ := cache.NewJobCache(ctx, lgr)
             plugin := &MyPlugin{cache: cache}
 
             // Add job with initial status
@@ -740,7 +692,7 @@ func testPlugin(t *testing.T) (*MyPlugin, *cache.JobCache) {
 
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, err := cache.NewJobCache(ctx, lgr, "")
+    cache, err := cache.NewJobCache(ctx, lgr)
     if err != nil {
         t.Fatalf("Failed to create cache: %v", err)
     }
@@ -963,10 +915,8 @@ func assertJobExists(t *testing.T, plugin *MyPlugin, jobID string) {
 ### 6. Clean up resources
 
 ```go
-func TestWithTempDir(t *testing.T) {
-    tmpDir := t.TempDir() // Automatically cleaned up
-
-    cache, _ := cache.NewJobCache(ctx, lgr, tmpDir)
+func TestWithCache(t *testing.T) {
+    cache, _ := cache.NewJobCache(ctx, lgr)
     defer cache.Close() // Ensure cleanup
 
     // Test code...

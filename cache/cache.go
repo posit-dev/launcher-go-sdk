@@ -12,8 +12,8 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/launcher"
 )
 
-// An in-memory or persistent cache of jobs that permits subscribing to granular
-// updates. This type is safe to use across multiple goroutines.
+// An in-memory cache of jobs that permits subscribing to granular updates.
+// This type is safe to use across multiple goroutines.
 type JobCache struct {
 	sync.RWMutex
 	lgr           *slog.Logger
@@ -25,24 +25,15 @@ type JobCache struct {
 	done          chan struct{}
 }
 
-// NewJobCache returns a JobCache. When dir is empty, it uses a pure in-memory
-// store. Otherwise it writes persistent storage into that directory.
-func NewJobCache(ctx context.Context, lgr *slog.Logger, dir string) (*JobCache, error) {
+// NewJobCache returns a JobCache backed by an in-memory store.
+func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
 	r := &JobCache{
 		lgr:           lgr,
+		store:         newInMemoryStore(),
 		ch:            make(chan *statusUpdate, 64),
 		updatesByID:   make(map[string]*subManager),
 		updatesByUser: make(map[string]*subManager),
 		done:          make(chan struct{}),
-	}
-	if dir != "" {
-		store, err := newPersistentStore(dir)
-		if err != nil {
-			return nil, err
-		}
-		r.store = store
-	} else {
-		r.store = newInMemoryStore()
 	}
 	r.updates = &subManager{}
 	go func() {
@@ -89,16 +80,13 @@ func NewJobCache(ctx context.Context, lgr *slog.Logger, dir string) (*JobCache, 
 	return r, nil
 }
 
-// Close sends any remaining status updates, closes open channels, and flushes
-// writes to disk.
+// Close sends any remaining status updates and closes open channels.
 func (r *JobCache) Close() error {
 	r.lgr.Debug("Closing job cache")
 	close(r.ch)
 	<-r.done
 	if err := r.store.Close(); err != nil {
-		return fmt.Errorf(
-			"failed to close job cache, some jobs may be lost: %w",
-			err)
+		return fmt.Errorf("failed to close job cache: %w", err)
 	}
 	return nil
 }

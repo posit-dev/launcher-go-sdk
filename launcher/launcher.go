@@ -55,8 +55,7 @@ type DefaultOptions struct {
 	// will also appear in the "cluster" field for job submission requests.
 	PluginName string
 
-	// Directory for temporary plugin output files (such as a cache), if
-	// any.
+	// Directory for temporary plugin files, if any.
 	ScratchPath string
 
 	// The unprivileged user Launcher expects this plugin to run as.
@@ -97,7 +96,7 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 		"the name of this plugin")
 	f.StringVar(&o.ScratchPath, "scratch-path",
 		fmt.Sprintf("/var/lib/rstudio-launcher/%s", pluginName),
-		"scratch path where logs and job state data are stored")
+		"scratch path where temporary plugin files are stored")
 	f.StringVar(&o.ServerUser, "server-user", "rstudio-server",
 		"user to run the plugin as")
 	f.Uint64Var(&o.threadPoolSize, "thread-pool-size", 0,

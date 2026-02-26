@@ -1,15 +1,9 @@
 package cache
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"os"
 	"sort"
 	"sync"
 	"time"
-
-	bolt "go.etcd.io/bbolt"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 )
@@ -42,7 +36,7 @@ type jobStore interface {
 	Close() error
 }
 
-// Creates a job store with no persistent storage.
+// Creates an in-memory job store.
 func newInMemoryStore() jobStore {
 	return &inMemoryStore{
 		jobs: make(map[string]*api.Job),
@@ -159,138 +153,6 @@ func (s *inMemoryStore) Delete(id string) error {
 	return nil
 }
 
-type persistentStore struct {
-	DB *bolt.DB
-}
-
-// Creates a job store with persistent storage at the given path.
-func newPersistentStore(dir string) (jobStore, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
-	}
-	db, err := bolt.Open(dir+"/store.db", 0600,
-		&bolt.Options{Timeout: 1 * time.Second})
-	if err != nil {
-		return nil, err
-	}
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(jobBucket)
-		return err
-	})
-	return &persistentStore{DB: db}, err
-}
-
-func (s *persistentStore) Close() error {
-	return s.DB.Close()
-}
-
-func (s *persistentStore) Count() (int, error) {
-	count := 0
-	err := s.DB.View(func(tx *bolt.Tx) error {
-		count = tx.Bucket(jobBucket).Stats().KeyN
-		return nil
-	})
-	return count, err
-}
-
-func (s *persistentStore) View(id string, fn func(*api.Job)) error {
-	return s.DB.View(func(tx *bolt.Tx) error {
-		value := tx.Bucket(jobBucket).Get([]byte(id))
-		if value == nil {
-			fn(nil)
-			return nil
-		}
-		job := &api.Job{ID: id}
-		// Note: we know that we can unmarshal, because we successfully
-		// marshalled this data to begin with.
-		_ = json.Unmarshal(value, job)
-		fn(job)
-		return nil
-	})
-}
-
-func (s *persistentStore) Update(id string, fn func(cur *api.Job) *api.Job) (bool, error) {
-	updated := false
-	err := s.DB.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(jobBucket)
-		k := []byte(id)
-		if v := b.Get(k); v != nil {
-			job, snapshot := &api.Job{}, &api.Job{}
-			// Note: we know that we can unmarshal successfully.
-			_ = json.Unmarshal(v, job)
-			_ = json.Unmarshal(v, snapshot)
-			job, _ = syncJob2(job, fn(snapshot))
-			buf, err := json.Marshal(job)
-			if err != nil {
-				return err
-			}
-			updated = !bytes.Equal(v, buf)
-			if updated {
-				return b.Put(k, buf)
-			}
-			return nil
-		}
-		job := fn(nil)
-		if job == nil {
-			return nil
-		}
-		buf, err := json.Marshal(job)
-		if err != nil {
-			return err
-		}
-		return b.Put(k, buf)
-	})
-	return updated, err
-}
-
-func (s *persistentStore) JobsForUser(user string, filter *api.JobFilter, fn func([]*api.Job)) error {
-	out := []*api.Job{}
-	// TODO: Use range-over-func syntax after toolchain update:
-	s.Jobs(user, filter)(func(job *api.Job) bool {
-		out = append(out, job)
-		return true
-	})
-	fn(out)
-	return nil
-}
-
-func (s *persistentStore) Jobs(user string, filter *api.JobFilter) func(func(*api.Job) bool) {
-	return func(yield func(*api.Job) bool) {
-		s.DB.View(func(tx *bolt.Tx) error {
-			tx.Bucket(jobBucket).ForEach(func(k, v []byte) error {
-				job := &api.Job{}
-				// Note: we know that we can unmarshal successfully.
-				_ = json.Unmarshal(v, job)
-				if user != "*" && job.User != user {
-					return nil
-				}
-				if filter == nil {
-					if !yield(job) {
-						return errStopEarly
-					}
-					return nil
-				}
-				if !filter.Includes(job) {
-					return nil
-				}
-				if !yield(job.WithFields(filter.Fields)) {
-					return errStopEarly
-				}
-				return nil
-			})
-			return nil
-		})
-	}
-}
-
-var errStopEarly = fmt.Errorf("stopped early")
-
-func (s *persistentStore) Delete(id string) error {
-	return s.DB.Update(func(tx *bolt.Tx) error {
-		return tx.Bucket(jobBucket).Delete([]byte(id))
-	})
-}
-
 // syncJob2 updates the current job with fields from an input. This is necessary
 // because semantically only a subset of job fields can actually be updated.
 // Returns the updated job and a boolean indicating whether a change was made.
@@ -337,5 +199,3 @@ func syncJob2(job *api.Job, in *api.Job) (*api.Job, bool) {
 	job.LastUpdated = &now
 	return job, updated
 }
-
-var jobBucket = []byte("jobs")

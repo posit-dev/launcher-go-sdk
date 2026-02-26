@@ -134,7 +134,7 @@ func main() {
     lgr := logger.MustNewLogger("myplugin", options.Debug, options.LoggingDir)
 
     // Create job cache
-    cache, _ := cache.NewJobCache(ctx, lgr, options.ScratchPath)
+    cache, _ := cache.NewJobCache(ctx, lgr)
 
     // Create and run plugin
     plugin := &MyPlugin{cache: cache}
@@ -252,7 +252,7 @@ The SDK provides a job cache for storing and querying jobs:
 
 ```go
 // Create cache (in main)
-cache, err := cache.NewJobCache(ctx, logger, scratchPath)
+cache, err := cache.NewJobCache(ctx, logger)
 
 // Store a job
 job.ID = "job-123"
@@ -273,7 +273,7 @@ cache.StreamJobStatus(ctx, w, user, jobID)
 ```
 
 The cache:
-- Stores jobs in memory or on disk (BoltDB)
+- Stores jobs in memory (the scheduler is the source of truth)
 - Enforces user permissions (users only see their own jobs)
 - Provides pub/sub for status updates
 - Handles job expiration
@@ -606,15 +606,13 @@ func (o *SlurmOptions) Validate() error {
 
 ### Using JobCache
 
-The JobCache provides persistent storage with pub/sub:
+The JobCache provides in-memory storage with pub/sub. The scheduler is always the source of truth — the cache is a local working copy.
 
 ```go
-// Create (in-memory)
-cache, err := cache.NewJobCache(ctx, logger, "")
-
-// Create (persistent - BoltDB)
-cache, err := cache.NewJobCache(ctx, logger, "/var/lib/myplugin")
+cache, err := cache.NewJobCache(ctx, logger)
 ```
+
+Plugins should populate the cache from the scheduler during `Bootstrap()` and keep it in sync via a periodic polling loop (e.g., every 5 seconds). This is consistent with how all existing Launcher plugins (Local, Kubernetes, Slurm) operate.
 
 **Adding/Updating Jobs**:
 
@@ -728,7 +726,7 @@ func TestSubmitJob(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Create mock writer
@@ -962,7 +960,7 @@ func (p *MyPlugin) GetClusters(w launcher.MultiClusterResponseWriter, user strin
 
 ### Load balancer awareness
 
-When multiple Launcher instances are load balanced, each plugin instance must be able to return the same data. This typically means using the scheduler itself as the source of truth, or a shared storage backend.
+When multiple Launcher instances are load balanced, each plugin instance must be able to return the same data. This typically means using the scheduler itself as the source of truth and populating each plugin's in-memory cache on startup.
 
 Implement `LoadBalancedPlugin` for multi-node deployments:
 

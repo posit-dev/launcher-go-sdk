@@ -356,9 +356,8 @@ func main() {
 	lgr := logger.MustNewLogger("inmemory", options.Debug, options.LoggingDir)
 	lgr.Info("Starting InMemory plugin")
 
-	// Create the job cache (in-memory only, no persistence)
-	// Pass an empty string for the directory to use in-memory storage
-	jobCache, err := cache.NewJobCache(ctx, lgr, "")
+	// Create the job cache
+	jobCache, err := cache.NewJobCache(ctx, lgr)
 	if err != nil {
 		lgr.Error("Failed to create job cache", "error", err)
 		os.Exit(1)

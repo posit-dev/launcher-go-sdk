@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING**: `cache.NewJobCache` no longer accepts a `dir` parameter. The SDK now defaults to in-memory caching, which aligns with how Launcher plugins are expected to work: the scheduler owns job state, and plugins populate the cache during `Bootstrap()` and keep it in sync via periodic polling.
+
+### Removed
+- BoltDB (`go.etcd.io/bbolt`) dependency — in-memory caching is now the standard approach
+
 ## [0.1.0] - 2024-02-05
 
 ### Added
@@ -38,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Thread-safe implementations for concurrent access
 
 #### Job Cache
-- In-memory and persistent (BoltDB) storage backends
+- In-memory storage backend
 - User permission enforcement
 - Pub/sub for job status updates
 - Automatic job expiration
@@ -76,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Go Version**: Requires Go 1.25 or later
 - **API Version**: Implements Launcher Plugin API v3.5.0
-- **Dependencies**: `go.etcd.io/bbolt v1.4.3` for persistent storage
+- **Dependencies**: No external runtime dependencies
 - **License**: MIT
 
 ### Stability
