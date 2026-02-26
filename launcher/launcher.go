@@ -114,8 +114,8 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 
 // Validate implements Options.
 func (o *DefaultOptions) Validate() error {
-	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)
-	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds)
+	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)             //nolint:gosec // CLI flag values are small integers
+	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds) //nolint:gosec // CLI flag values are small integers
 	return nil
 }
 
@@ -322,11 +322,13 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 		switch r := req.(type) {
 		case *protocol.HeartbeatRequest:
 			w = newResponseWriter(req, ch)
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteHeartbeat()
 		case *protocol.BootstrapRequest:
 			w = newResponseWriter(req, ch)
 			v := r.Version
 			if v.Major != api.APIVersion.Major {
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeUnsupportedVersion,
 					"The plugin supports API version %d.X.XXXX. "+
 						"The Launcher's API version is %d.%d.%d",
@@ -337,6 +339,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			if ok {
 				bsPlugin.Bootstrap(w)
 			}
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteBootstrap()
 		case *protocol.SubmitJobRequest:
 			w = newResponseWriter(req, ch)
@@ -344,6 +347,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 				r.Job.User = r.Username
 			}
 			if r.Job.User == "" {
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"User must not be empty")
 				return
@@ -376,6 +380,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 		case *protocol.ControlJobRequest:
 			w = newResponseWriter(req, ch)
 			if r.JobID == "*" {
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"Cannot control all jobs simultaneously. Please specify a single Job ID.")
 				return
@@ -387,6 +392,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 				api.OperationStop, api.OperationKill,
 				api.OperationCancel:
 			default:
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"Unknown control job operation (%d) for job %s",
 					r.Operation, r.JobID)
@@ -431,9 +437,11 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			if ok {
 				lbPlugin.SyncNodes(r.Nodes)
 			}
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteSetLoadBalancerNodes()
 		default:
 			w = newResponseWriter(req, ch)
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteErrorf(api.CodeRequestNotSupported,
 				"Request not supported")
 		}

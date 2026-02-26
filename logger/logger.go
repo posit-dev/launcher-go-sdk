@@ -30,7 +30,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 		return newWorkbenchLogger(name, os.Stderr, level), nil
 	}
 	fname := name + ".log"
-	logFile, err := os.Create(path.Join(loggingDir, fname))
+	logFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 		return newWorkbenchLogger(name, sink, level), nil
 	}
 	fname = name + "-debug.log"
-	debugFile, err := os.Create(path.Join(loggingDir, fname))
+	debugFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 func MustNewLogger(name string, debug bool, loggingDir string) *slog.Logger {
 	lgr, err := NewLogger(name, debug, loggingDir)
 	if err != nil {
-		lgr, _ = NewLogger(name, true, "")
+		lgr, _ = NewLogger(name, true, "") //nolint:errcheck // stderr-only fallback cannot fail
 		lgr.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}

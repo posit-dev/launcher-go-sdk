@@ -108,7 +108,7 @@ func (st *smokeTest) initialize() error {
 		args = append(args, "--unprivileged=1")
 	}
 
-	st.cmd = exec.Command(st.pluginPath, args...)
+	st.cmd = exec.Command(st.pluginPath, args...) //nolint:gosec // pluginPath is a trusted CLI argument
 
 	var err error
 	st.stdin, err = st.cmd.StdinPipe()
@@ -176,7 +176,7 @@ func (st *smokeTest) readResponses(decoder *protocol.Decoder) {
 			continue
 		}
 
-		pretty, _ := json.MarshalIndent(obj, "", "   ")
+		pretty, _ := json.MarshalIndent(obj, "", "   ") //nolint:errcheck // best-effort pretty printing
 		fmt.Println(string(pretty))
 
 		st.mu.Lock()
@@ -316,7 +316,7 @@ func (st *smokeTest) sendRequest() bool {
 
 	switch action {
 	case actionExit:
-		_ = st.stdin.Close()
+		_ = st.stdin.Close() //nolint:errcheck // best-effort cleanup
 		return false
 	case actionGetJobStatuses:
 		success = st.sendJobStatusStreamRequest()
@@ -589,13 +589,13 @@ func (st *smokeTest) stop() {
 	st.mu.Unlock()
 	st.cond.Broadcast()
 
-	_ = st.stdin.Close()
+	_ = st.stdin.Close() //nolint:errcheck // best-effort cleanup
 
 	select {
 	case <-st.readerDone:
 	case <-time.After(30 * time.Second):
 		fmt.Fprintln(os.Stderr, "Plugin did not exit in time, killing...")
-		_ = st.cmd.Process.Kill()
+		_ = st.cmd.Process.Kill() //nolint:errcheck // best-effort cleanup
 		<-st.readerDone
 	}
 }

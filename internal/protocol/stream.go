@@ -119,7 +119,7 @@ func (d *Decoder) Raw() *json.RawMessage {
 	msg := &json.RawMessage{}
 	// Note: RawMessage.UnmarshalJSON() cannot fail unless msg is nil and
 	// performs no validation itself, so we have to validate afterwards.
-	_ = json.Unmarshal(d.buf[:d.msgLen], msg)
+	_ = json.Unmarshal(d.buf[:d.msgLen], msg) //nolint:errcheck // RawMessage.UnmarshalJSON cannot fail unless msg is nil
 	if !json.Valid(*msg) {
 		d.err = ErrMsgInvalid
 		return nil

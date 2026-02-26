@@ -95,6 +95,7 @@ func (r *JobCache) Close() error {
 // Lookup passes a callback the cached job with a given id or returns an error.
 func (r *JobCache) Lookup(user, id string, fn func(*api.Job)) error {
 	notfound := false
+	//nolint:errcheck // in-memory store never returns errors from View
 	r.store.View(id, func(job *api.Job) {
 		if job == nil || (user != "*" && job.User != user) {
 			notfound = true
@@ -166,10 +167,11 @@ func (r *JobCache) Update(user, id string, fn func(*api.Job) *api.Job) error {
 // WriteJob can be used to implement Plugin.WriteJob().
 func (r *JobCache) WriteJob(w launcher.ResponseWriter, user, id string) {
 	err := r.Lookup(user, id, func(job *api.Job) {
+		//nolint:errcheck // fire-and-forget convenience wrapper
 		w.WriteJobs([]*api.Job{job})
 	})
 	if err != nil {
-		// This also prevents users from see others' jobs.
+		//nolint:errcheck // nothing useful to do if writing the error also fails
 		w.WriteError(err)
 		return
 	}
@@ -177,7 +179,9 @@ func (r *JobCache) WriteJob(w launcher.ResponseWriter, user, id string) {
 
 // WriteJobs can be used to implement Plugin.WriteJobs().
 func (r *JobCache) WriteJobs(w launcher.ResponseWriter, user string, filter *api.JobFilter) {
+	//nolint:errcheck // in-memory store never returns errors from JobsForUser
 	r.store.JobsForUser(user, filter, func(jobs []*api.Job) {
+		//nolint:errcheck // fire-and-forget convenience wrapper
 		w.WriteJobs(jobs)
 	})
 }
@@ -222,6 +226,7 @@ func (r *JobCache) RunningJobContext(parent context.Context, user, id string) (c
 func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamResponseWriter, user, id string) {
 	done := false
 	err := r.Lookup(user, id, func(job *api.Job) {
+		//nolint:errcheck // fire-and-forget convenience wrapper
 		w.WriteJobStatus(api.JobID(job.ID), job.Status, job.StatusMsg)
 		// Break off early if we know there will be no further updates.
 		if api.TerminalStatus(job.Status) {
@@ -230,7 +235,7 @@ func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamRespons
 		}
 	})
 	if err != nil {
-		// This also prevents users from see others' jobs.
+		//nolint:errcheck // nothing useful to do if writing the error also fails
 		w.WriteError(err)
 		return
 	}
@@ -247,6 +252,7 @@ poll:
 		if !ok {
 			return
 		}
+		//nolint:errcheck // fire-and-forget convenience wrapper
 		w.WriteJobStatus(api.JobID(j.ID), j.Status, j.StatusMsg)
 	}
 	goto poll
@@ -254,8 +260,10 @@ poll:
 
 // StreamJobStatuses can be used to implement Plugin.GetJobStatuses().
 func (r *JobCache) StreamJobStatuses(ctx context.Context, w launcher.StreamResponseWriter, user string) {
+	//nolint:errcheck // in-memory store never returns errors from JobsForUser
 	r.store.JobsForUser(user, nil, func(jobs []*api.Job) {
 		for _, job := range jobs {
+			//nolint:errcheck // fire-and-forget convenience wrapper
 			w.WriteJobStatus(api.JobID(job.ID), job.Status,
 				job.StatusMsg)
 		}
@@ -270,6 +278,7 @@ poll:
 		if !ok {
 			return
 		}
+		//nolint:errcheck // fire-and-forget convenience wrapper
 		w.WriteJobStatus(api.JobID(j.ID), j.Status, j.StatusMsg)
 	}
 	goto poll
