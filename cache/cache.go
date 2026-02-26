@@ -1,3 +1,4 @@
+// Package cache provides an in-memory job cache with pub/sub for status updates.
 package cache
 
 import (
@@ -12,7 +13,7 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/launcher"
 )
 
-// An in-memory cache of jobs that permits subscribing to granular updates.
+// JobCache is an in-memory cache of jobs that permits subscribing to granular updates.
 // This type is safe to use across multiple goroutines.
 type JobCache struct {
 	sync.RWMutex
@@ -184,7 +185,7 @@ func (r *JobCache) WriteJobs(w launcher.ResponseWriter, user string, filter *api
 	})
 }
 
-// RunningJobContext returns a context that is cancelled when a job is no longer
+// RunningJobContext returns a context that is canceled when a job is no longer
 // running. It is useful for implementing Plugin.GetJobOutput() and
 // Plugin.GetJobResourceUtil().
 func (r *JobCache) RunningJobContext(parent context.Context, user string, id string) (context.Context, error) {
@@ -352,9 +353,9 @@ func (r *JobCache) Prune(interval time.Duration) func(func(*api.Job) bool) {
 	}
 }
 
-// Manages the lifecycle and notifications of individual subscriptions. This
-// type is *not* safe to use concurrently from multiple goroutines; you must
-// serialise operations that use it.
+// subManager manages the lifecycle and notifications of individual
+// subscriptions. This type is *not* safe to use concurrently from multiple
+// goroutines; you must serialize operations that use it.
 type subManager struct {
 	// Note: we use a linked list internally because we're constantly adding
 	// and removing elements, and using a slice for that is icky.
@@ -367,7 +368,7 @@ func (s *subManager) Count() int {
 }
 
 // Subscribe registers a channel to receive notifications when jobs change
-// status. Notifications will not be sent after the passed context is cancelled
+// status. Notifications will not be sent after the passed context is canceled
 // and the channel will be closed.
 func (s *subManager) Subscribe(ctx context.Context, ch chan<- *statusUpdate) {
 	s.subs.PushBack(&subscriber{ctx, ch})

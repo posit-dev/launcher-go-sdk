@@ -612,7 +612,7 @@ func newStreamStore(ctx context.Context) *streamStore {
 }
 
 // Start starts a stream for the given request ID and returns a context. This context
-// will be cancelled when Cancel() is called.
+// will be canceled when Cancel() is called.
 func (s *streamStore) Start(requestID uint64) context.Context {
 	s.Lock()
 	defer s.Unlock()

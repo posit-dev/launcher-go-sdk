@@ -7,14 +7,17 @@ import (
 	"io"
 )
 
+// DefaultMaxMsgSize is the default maximum message size in bytes (5MB).
 const DefaultMaxMsgSize = 5242880
 
 var (
+	// ErrMsgTooLarge is returned when a message exceeds the maximum message size.
 	ErrMsgTooLarge = fmt.Errorf("message exceeds maximum message size")
-	ErrMsgInvalid  = fmt.Errorf("invalid message")
+	// ErrMsgInvalid is returned when a message is invalid.
+	ErrMsgInvalid = fmt.Errorf("invalid message")
 )
 
-// A streaming encoder for Launcher's JSON-based wire protocol.
+// Encoder is a streaming encoder for Launcher's JSON-based wire protocol.
 type Encoder struct {
 	w       io.Writer
 	maxSize int
@@ -35,7 +38,7 @@ func (e *Encoder) Encode(msg interface{}) error {
 	return e.write(buf)
 }
 
-// Encode a raw JSON message into the stream.
+// EncodeRaw encodes a raw JSON message into the stream.
 func (e *Encoder) EncodeRaw(msg json.RawMessage) error {
 	if !json.Valid(msg) {
 		return ErrMsgInvalid
@@ -57,7 +60,7 @@ func (e *Encoder) write(msg []byte) error {
 	return nil
 }
 
-// A streaming decoder for Launcher's JSON-based wire protocol.
+// Decoder is a streaming decoder for Launcher's JSON-based wire protocol.
 type Decoder struct {
 	r         io.Reader
 	headerBuf [4]byte
@@ -105,7 +108,7 @@ func (d *Decoder) Request() Request {
 	return req
 }
 
-// Request reads the current message or returns nil in the case of an error.
+// Raw returns the current message or returns nil in the case of an error.
 func (d *Decoder) Raw() *json.RawMessage {
 	if d.err != nil {
 		return nil

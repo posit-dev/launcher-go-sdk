@@ -1,3 +1,4 @@
+// Package api defines types for the Launcher Plugin API.
 package api
 
 import (
@@ -10,51 +11,55 @@ import (
 	"time"
 )
 
+// ErrCode represents a Launcher Plugin error code.
 type ErrCode int
 
-// An ErrCode represents a Launcher Plugin error code.
 const (
-	// The request failed for an undetermined reason. Used when the Plugin
-	// cannot determine an appropriate error code for the error.
+	// CodeUnknown indicates the request failed for an undetermined reason.
+	// Used when the Plugin cannot determine an appropriate error code for
+	// the error.
 	CodeUnknown ErrCode = iota
 
-	// The request is not supported by the Plugin. The runtime may also
-	// return this if the Launcher sends a request that is not understood by
-	// this package.
+	// CodeRequestNotSupported indicates the request is not supported by the
+	// Plugin. The runtime may also return this if the Launcher sends a
+	// request that is not understood by this package.
 	CodeRequestNotSupported
 
-	// The request is malformed. A Plugin may return this if it receives an
-	// unexpected message from the Launcher. Usually this is only used by
-	// the runtime.
+	// CodeInvalidRequest indicates the request is malformed. A Plugin may
+	// return this if it receives an unexpected message from the Launcher.
+	// Usually this is only used by the runtime.
 	CodeInvalidRequest
 
-	// The job does not exist in the scheduling system. The Plugin should
-	// return this if the user-specified job ID does not exist.
+	// CodeJobNotFound indicates the job does not exist in the scheduling
+	// system. The Plugin should return this if the user-specified job ID
+	// does not exist.
 	CodeJobNotFound
 
-	// The request could not be completed because the Plugin had to restart.
+	// CodePluginRestarted indicates the request could not be completed
+	// because the Plugin had to restart.
 	CodePluginRestarted
 
-	// The request timed out while waiting for a response from the job
-	// scheduling system.
+	// CodeTimeout indicates the request timed out while waiting for a
+	// response from the job scheduling system.
 	CodeTimeout
 
-	// The job exists in the job scheduling system but is not in the running
-	// state.
+	// CodeJobNotRunning indicates the job exists in the job scheduling
+	// system but is not in the running state.
 	CodeJobNotRunning
 
-	// The job does not have output.
+	// CodeJobOutputNotFound indicates the job does not have output.
 	CodeJobOutputNotFound
 
-	// The job has an invalid job state for the requested action.
+	// CodeInvalidJobState indicates the job has an invalid job state for
+	// the requested action.
 	CodeInvalidJobState
 
-	// The job control action failed.
+	// CodeJobControlFailure indicates the job control action failed.
 	CodeJobControlFailure
 
-	// The Launcher is using a Launcher Plugin API version that is not
-	// supported by the Plugin. This is sent automatically by the runtime if
-	// appropriate.
+	// CodeUnsupportedVersion indicates the Launcher is using a Launcher
+	// Plugin API version that is not supported by the Plugin. This is sent
+	// automatically by the runtime if appropriate.
 	CodeUnsupportedVersion
 )
 
@@ -85,7 +90,7 @@ func (e ErrCode) String() string {
 	}
 }
 
-// Structured error representation for Launcher plugins.
+// Error is a structured error representation for Launcher plugins.
 type Error struct {
 	Code ErrCode `json:"code"`
 	Msg  string  `json:"message"`
@@ -154,7 +159,7 @@ const (
 	StatusSuspended = "Suspended"
 )
 
-// Returns true when the passed status is "terminal" -- i.e. the job's status
+// TerminalStatus returns true when the passed status is "terminal" -- i.e. the job's status
 // will not change in the future.
 func TerminalStatus(status string) bool {
 	switch status {
@@ -164,7 +169,7 @@ func TerminalStatus(status string) bool {
 	return false
 }
 
-// A JobFilter describes a set of conditions (all optional) that must be met by
+// JobFilter describes a set of conditions (all optional) that must be met by
 // a job to be included in a response.
 type JobFilter struct {
 	// The set of tags that a job must have to be included.
@@ -218,13 +223,18 @@ func (f *JobFilter) Includes(job *Job) bool {
 	return true
 }
 
+// JobOutput represents the type of output stream (stdout, stderr, or both).
 type JobOutput int
 
+// JobOutput constants for output stream types.
 const (
+	// OutputStdout represents the standard output stream.
 	OutputStdout JobOutput = iota
 
+	// OutputStderr represents the standard error stream.
 	OutputStderr
 
+	// OutputBoth represents both stdout and stderr streams combined.
 	OutputBoth
 )
 
@@ -259,11 +269,11 @@ func (o *JobOutput) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// A JobID is represented by a string, but may be "*" in some cases to indicate
+// JobID is represented by a string, but may be "*" in some cases to indicate
 // any or all jobs.
 type JobID string
 
-// Container fields for a Job.
+// Container holds container fields for a Job.
 type Container struct {
 	// The name of the container image to use.
 	Image string `json:"image"`
@@ -279,7 +289,7 @@ type Container struct {
 	SupplementalGroups []int `json:"supplementalGroupIds,omitempty"`
 }
 
-// An environment variable.
+// Env is an environment variable.
 type Env struct {
 	// The name of the environment variable.
 	Name string `json:"name"`
@@ -311,7 +321,7 @@ func (e *Env) Set(s string) error {
 	return nil
 }
 
-// Launcher's representation of a job.
+// Job is Launcher's representation of a job.
 type Job struct {
 	// The unique ID of the Job.
 	ID string `json:"id"`
@@ -375,7 +385,7 @@ type Job struct {
 	// The standard input to be passed to the Command or Exe of the Job.
 	Stdin string `json:"stdin,omitempty"`
 
-	//The arguments of the Command or Exe of the Job.
+	// The arguments of the Command or Exe of the Job.
 	Args []string `json:"args,omitempty"`
 
 	// The environment variables for the Job.
@@ -491,7 +501,7 @@ func (job *Job) WithFields(fields []string) *Job {
 	return scrubbed
 }
 
-// Custom Job configuration fields.
+// JobConfig holds custom Job configuration fields.
 type JobConfig struct {
 	// The name of the custom configuration value.
 	Name string `json:"name"`
@@ -503,30 +513,32 @@ type JobConfig struct {
 	Value string `json:"value,omitempty"`
 }
 
+// JobOperation represents operations to control the state of a job.
 type JobOperation int
 
-// A JobOperation represents operations to control the state of a job.
 const (
-	// Indicates that the job should be suspended. This operation should be
-	// equivalent to sending SIGSTOP.
+	// OperationSuspend indicates that the job should be suspended. This
+	// operation should be equivalent to sending SIGSTOP.
 	OperationSuspend JobOperation = iota
 
-	// Indicates that the job should be resumed. This operation should be
-	// equivalent to sending SIGCONT.
+	// OperationResume indicates that the job should be resumed. This
+	// operation should be equivalent to sending SIGCONT.
 	OperationResume
 
-	// Indicates that the job should be stopped. This operation should be
-	// equivalent to sending SIGTERM.
+	// OperationStop indicates that the job should be stopped. This
+	// operation should be equivalent to sending SIGTERM.
 	OperationStop
 
-	// Indicates that the job should be killed. This operation should be
-	// equivalent to sending SIGKILL.
+	// OperationKill indicates that the job should be killed. This
+	// operation should be equivalent to sending SIGKILL.
 	OperationKill
 
-	// Indicates that a pending job should be canceled, if possible.
+	// OperationCancel indicates that a pending job should be canceled, if
+	// possible.
 	OperationCancel
 )
 
+// ValidForStatus returns the job status required for this operation.
 func (o JobOperation) ValidForStatus() string {
 	switch o {
 	case OperationSuspend, OperationStop, OperationKill:
@@ -553,7 +565,7 @@ func (o JobOperation) String() string {
 	}
 }
 
-// A volume mounted into a Job.
+// Mount is a volume mounted into a Job.
 type Mount struct {
 	// The destination path of the mount.
 	Path string `json:"mountPath"`
@@ -625,7 +637,7 @@ func (m *Mount) Set(s string) error {
 	return nil
 }
 
-// The underlying source for a volume mounted into a Job.
+// MountSource is the underlying source for a volume mounted into a Job.
 type MountSource struct {
 	// The type of mount. The default supported options are "azureFile",
 	// "cephFs", "glusterFs", "host", and "nfs". The "passthrough" value or
@@ -636,6 +648,7 @@ type MountSource struct {
 	Source interface{} `json:"source"`
 }
 
+// UnmarshalJSON implements json.Unmarshaler for MountSource.
 func (ms *MountSource) UnmarshalJSON(data []byte) error {
 	type rawMountSource struct {
 		Type   string          `json:"type"`
@@ -661,18 +674,17 @@ func (ms *MountSource) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// A volume mounted from the host filesystem. This is the only widely-supported
+// HostMount is a volume mounted from the host filesystem. This is the only widely-supported
 // mount type.
 type HostMount struct {
 	// The path of the mount on the host filesystem.
 	Path string `json:"path"`
 }
 
-// A volume mounted from the host filesystem. This is the only widely-supported
-// mount type.
+// MountTypeHost is the mount type for host filesystem mounts.
 const MountTypeHost = "host"
 
-// A generic Job placement constraint.
+// PlacementConstraint is a generic Job placement constraint.
 type PlacementConstraint struct {
 	// The name of the placement constraint.
 	Name string `json:"name"`
@@ -681,7 +693,7 @@ type PlacementConstraint struct {
 	Value string `json:"value,omitempty"`
 }
 
-// An exposed port for containerized jobs.
+// Port is an exposed port for containerized jobs.
 type Port struct {
 	// The target port, within the container.
 	TargetPort int `json:"targetPort"`
@@ -745,7 +757,7 @@ func (p *Port) Set(s string) error {
 	return nil
 }
 
-// Resource controls for a Job.
+// ResourceLimit holds resource controls for a Job.
 type ResourceLimit struct {
 	// The type of the resource. One of "cpuCount", "cpuTime", "memory", or
 	// "memorySwap".
@@ -762,7 +774,7 @@ type ResourceLimit struct {
 	Max string `json:"maxValue,omitempty"`
 }
 
-// Details for a resource profile available on a cluster.
+// ResourceProfile holds details for a resource profile available on a cluster.
 type ResourceProfile struct {
 	// The name of a resource profile.
 	Name string `json:"name"`
@@ -780,7 +792,7 @@ type ResourceProfile struct {
 	Constraints []PlacementConstraint `json:"placementConstraints"`
 }
 
-// Represents a Launcher/plugin node when running in a load-balanced scenario.
+// Node represents a Launcher/plugin node when running in a load-balanced scenario.
 type Node struct {
 	Host     string     `json:"host"`
 	IP       netip.Addr `json:"ipv4"`
@@ -795,7 +807,7 @@ func (n *Node) Online() bool {
 	return n.Status == "Online"
 }
 
-// A Launcher version, including optional build and revision information.
+// Version is a Launcher version, including optional build and revision information.
 type Version struct {
 	Major    int    `json:"major"`
 	Minor    int    `json:"minor"`
