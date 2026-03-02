@@ -7,14 +7,17 @@ import (
 	"io"
 )
 
+// DefaultMaxMsgSize is the default maximum message size in bytes (5MB).
 const DefaultMaxMsgSize = 5242880
 
 var (
+	// ErrMsgTooLarge is returned when a message exceeds the maximum message size.
 	ErrMsgTooLarge = fmt.Errorf("message exceeds maximum message size")
-	ErrMsgInvalid  = fmt.Errorf("invalid message")
+	// ErrMsgInvalid is returned when a message is invalid.
+	ErrMsgInvalid = fmt.Errorf("invalid message")
 )
 
-// A streaming encoder for Launcher's JSON-based wire protocol.
+// Encoder is a streaming encoder for Launcher's JSON-based wire protocol.
 type Encoder struct {
 	w       io.Writer
 	maxSize int
@@ -35,7 +38,7 @@ func (e *Encoder) Encode(msg interface{}) error {
 	return e.write(buf)
 }
 
-// Encode a raw JSON message into the stream.
+// EncodeRaw encodes a raw JSON message into the stream.
 func (e *Encoder) EncodeRaw(msg json.RawMessage) error {
 	if !json.Valid(msg) {
 		return ErrMsgInvalid
@@ -47,7 +50,10 @@ func (e *Encoder) write(msg []byte) error {
 	if len(msg) > e.maxSize {
 		return ErrMsgTooLarge
 	}
-	header := uint32(len(msg))
+	if len(msg) > int(^uint32(0)) {
+		return ErrMsgTooLarge
+	}
+	header := uint32(len(msg)) //nolint:gosec // bounds checked above
 	if err := binary.Write(e.w, binary.BigEndian, header); err != nil {
 		return err
 	}
@@ -57,7 +63,7 @@ func (e *Encoder) write(msg []byte) error {
 	return nil
 }
 
-// A streaming decoder for Launcher's JSON-based wire protocol.
+// Decoder is a streaming decoder for Launcher's JSON-based wire protocol.
 type Decoder struct {
 	r         io.Reader
 	headerBuf [4]byte
@@ -105,7 +111,7 @@ func (d *Decoder) Request() Request {
 	return req
 }
 
-// Request reads the current message or returns nil in the case of an error.
+// Raw returns the current message or returns nil in the case of an error.
 func (d *Decoder) Raw() *json.RawMessage {
 	if d.err != nil {
 		return nil
@@ -113,7 +119,7 @@ func (d *Decoder) Raw() *json.RawMessage {
 	msg := &json.RawMessage{}
 	// Note: RawMessage.UnmarshalJSON() cannot fail unless msg is nil and
 	// performs no validation itself, so we have to validate afterwards.
-	_ = json.Unmarshal(d.buf[:d.msgLen], msg)
+	_ = json.Unmarshal(d.buf[:d.msgLen], msg) //nolint:errcheck // RawMessage.UnmarshalJSON cannot fail unless msg is nil
 	if !json.Valid(*msg) {
 		d.err = ErrMsgInvalid
 		return nil
@@ -128,7 +134,7 @@ func (d *Decoder) MsgSize() uint32 {
 
 // Err returns the most recently encountered error, or nil if there is none.
 func (d *Decoder) Err() error {
-	if d.err == nil || d.err == io.EOF {
+	if d.err == nil || d.err == io.EOF { //nolint:errorlint // exact match intentional; wrapped EOF should not be suppressed
 		return nil
 	}
 	return fmt.Errorf("failed to read from stream: %w", d.err)

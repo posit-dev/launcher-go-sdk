@@ -30,7 +30,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 		return newWorkbenchLogger(name, os.Stderr, level), nil
 	}
 	fname := name + ".log"
-	logFile, err := os.Create(path.Join(loggingDir, fname))
+	logFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 		return newWorkbenchLogger(name, sink, level), nil
 	}
 	fname = name + "-debug.log"
-	debugFile, err := os.Create(path.Join(loggingDir, fname))
+	debugFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 func MustNewLogger(name string, debug bool, loggingDir string) *slog.Logger {
 	lgr, err := NewLogger(name, debug, loggingDir)
 	if err != nil {
-		lgr, _ = NewLogger(name, true, "")
+		lgr, _ = NewLogger(name, true, "") //nolint:errcheck // stderr-only fallback cannot fail
 		lgr.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
 	}
@@ -148,16 +148,18 @@ func formatAttr(group string, attr slog.Attr) string {
 			return prefix + "true"
 		}
 		return prefix + "false"
-	case slog.KindString, slog.KindFloat64, slog.KindInt64, slog.KindUint64:
+	case slog.KindString, slog.KindFloat64, slog.KindInt64, slog.KindUint64,
+		slog.KindDuration, slog.KindTime:
 		return prefix + value.String()
 	case slog.KindAny:
 		if err, ok := value.Any().(error); ok {
 			return prefix + err.Error()
 		}
 		fallthrough
-	default:
+	case slog.KindGroup, slog.KindLogValuer:
 		return ""
 	}
+	return ""
 }
 
 const timestampFormat = "2006-01-02T15:04:05.000000Z"

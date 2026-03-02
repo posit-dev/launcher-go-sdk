@@ -161,7 +161,7 @@ func testListWorkflow(t *testing.T, p launcher.Plugin, user string, profile *Pro
 		// Wait for at least one job to reach a known status.
 		ctx, cancel := context.WithTimeout(context.Background(), profile.JobCompleteTimeout)
 		defer cancel()
-		_, _ = WaitForTerminalStatus(ctx, p, user, id1)
+		_, _ = WaitForTerminalStatus(ctx, p, user, id1) //nolint:errcheck // best-effort wait; test proceeds regardless
 
 		// Filter for terminal statuses.
 		w := plugintest.NewMockResponseWriter()
@@ -481,7 +481,7 @@ func RunSuspendResume(t *testing.T, p launcher.Plugin, user string, opts Suspend
 	plugintest.AssertJobStatus(t, resumedJob, api.StatusRunning)
 
 	// Clean up: stop the job so it doesn't leak.
-	_, _ = ControlJob(p, user, id, api.OperationStop)
+	_, _ = ControlJob(p, user, id, api.OperationStop) //nolint:errcheck // best-effort cleanup of long-running job
 }
 
 // RunOutputStream submits a job, opens an output stream, and verifies

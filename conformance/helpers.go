@@ -69,7 +69,7 @@ func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) strin
 // GetJob calls p.GetJob and returns the job, or nil and the error if the
 // plugin returned an error. Unlike [SubmitJob], this does not fail the test
 // on error, allowing callers to assert on error conditions.
-func GetJob(p launcher.Plugin, user string, id string, fields []string) (*api.Job, *api.Error) {
+func GetJob(p launcher.Plugin, user, id string, fields []string) (*api.Job, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
 	p.GetJob(w, user, api.JobID(id), fields)
 	if w.HasError() {
@@ -90,7 +90,7 @@ func GetJobs(p launcher.Plugin, user string, filter *api.JobFilter) []*api.Job {
 }
 
 // ControlJob calls p.ControlJob and returns the result and any error.
-func ControlJob(p launcher.Plugin, user string, id string, op api.JobOperation) (*plugintest.ControlResult, *api.Error) {
+func ControlJob(p launcher.Plugin, user, id string, op api.JobOperation) (*plugintest.ControlResult, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
 	p.ControlJob(w, user, api.JobID(id), op)
 	if w.HasError() {
@@ -118,7 +118,7 @@ func WaitForStatus(ctx context.Context, p launcher.Plugin, user, id, status stri
 		case <-ticker.C:
 			job, apiErr := GetJob(p, user, id, nil)
 			if apiErr != nil {
-				return nil, fmt.Errorf("GetJob returned error: %v", apiErr)
+				return nil, fmt.Errorf("GetJob returned error: %w", apiErr)
 			}
 			if job == nil {
 				return nil, fmt.Errorf("GetJob returned no job for ID %s", id)
@@ -150,7 +150,7 @@ func WaitForTerminalStatus(ctx context.Context, p launcher.Plugin, user, id stri
 		case <-ticker.C:
 			job, apiErr := GetJob(p, user, id, nil)
 			if apiErr != nil {
-				return nil, fmt.Errorf("GetJob returned error: %v", apiErr)
+				return nil, fmt.Errorf("GetJob returned error: %w", apiErr)
 			}
 			if job == nil {
 				return nil, fmt.Errorf("GetJob returned no job for ID %s", id)

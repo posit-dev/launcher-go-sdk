@@ -49,7 +49,7 @@ This timing is intentionally short to make testing easier. In a real plugin, job
 
 The plugin uses the SDK's `JobCache` to store job information. The cache:
 
-- Stores jobs in memory (or optionally on disk)
+- Stores jobs in memory
 - Handles permission checking (users can only see their own jobs)
 - Supports pub/sub for status updates
 - Provides helper methods for writing jobs to ResponseWriters
@@ -211,7 +211,7 @@ func TestSubmitJob(t *testing.T) {
     // Create plugin
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr, "")
+    cache, _ := cache.NewJobCache(ctx, lgr)
     plugin := &InMemoryPlugin{cache: cache}
 
     // Create mock writer

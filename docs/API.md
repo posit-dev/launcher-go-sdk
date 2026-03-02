@@ -916,15 +916,14 @@ Thread-safe job storage with permission enforcement and pub/sub.
 #### Function: NewJobCache
 
 ```go
-func NewJobCache(ctx context.Context, lgr *slog.Logger, dir string) (*JobCache, error)
+func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error)
 ```
 
-Creates a new job cache.
+Creates a new in-memory job cache. The scheduler is the source of truth for job state; plugins should populate the cache during `Bootstrap()` and keep it in sync via periodic polling.
 
 **Parameters**:
 - `ctx` - Context for background operations
 - `lgr` - Structured logger
-- `dir` - Directory for persistent storage (empty string = in-memory only)
 
 **Returns**: JobCache instance and error
 

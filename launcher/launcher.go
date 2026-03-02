@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -55,8 +56,7 @@ type DefaultOptions struct {
 	// will also appear in the "cluster" field for job submission requests.
 	PluginName string
 
-	// Directory for temporary plugin output files (such as a cache), if
-	// any.
+	// Directory for temporary plugin files, if any.
 	ScratchPath string
 
 	// The unprivileged user Launcher expects this plugin to run as.
@@ -97,7 +97,7 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 		"the name of this plugin")
 	f.StringVar(&o.ScratchPath, "scratch-path",
 		fmt.Sprintf("/var/lib/rstudio-launcher/%s", pluginName),
-		"scratch path where logs and job state data are stored")
+		"scratch path where temporary plugin files are stored")
 	f.StringVar(&o.ServerUser, "server-user", "rstudio-server",
 		"user to run the plugin as")
 	f.Uint64Var(&o.threadPoolSize, "thread-pool-size", 0,
@@ -114,8 +114,8 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 
 // Validate implements Options.
 func (o *DefaultOptions) Validate() error {
-	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)
-	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds)
+	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)             //nolint:gosec // CLI flag values are small integers
+	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds) //nolint:gosec // CLI flag values are small integers
 	return nil
 }
 
@@ -322,11 +322,13 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 		switch r := req.(type) {
 		case *protocol.HeartbeatRequest:
 			w = newResponseWriter(req, ch)
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteHeartbeat()
 		case *protocol.BootstrapRequest:
 			w = newResponseWriter(req, ch)
 			v := r.Version
 			if v.Major != api.APIVersion.Major {
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeUnsupportedVersion,
 					"The plugin supports API version %d.X.XXXX. "+
 						"The Launcher's API version is %d.%d.%d",
@@ -337,6 +339,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			if ok {
 				bsPlugin.Bootstrap(w)
 			}
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteBootstrap()
 		case *protocol.SubmitJobRequest:
 			w = newResponseWriter(req, ch)
@@ -344,6 +347,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 				r.Job.User = r.Username
 			}
 			if r.Job.User == "" {
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"User must not be empty")
 				return
@@ -376,6 +380,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 		case *protocol.ControlJobRequest:
 			w = newResponseWriter(req, ch)
 			if r.JobID == "*" {
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"Cannot control all jobs simultaneously. Please specify a single Job ID.")
 				return
@@ -387,6 +392,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 				api.OperationStop, api.OperationKill,
 				api.OperationCancel:
 			default:
+				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"Unknown control job operation (%d) for job %s",
 					r.Operation, r.JobID)
@@ -431,9 +437,11 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			if ok {
 				lbPlugin.SyncNodes(r.Nodes)
 			}
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteSetLoadBalancerNodes()
 		default:
 			w = newResponseWriter(req, ch)
+			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteErrorf(api.CodeRequestNotSupported,
 				"Request not supported")
 		}
@@ -486,7 +494,8 @@ func (w *defaultResponseWriter) WriteErrorf(code api.ErrCode, format string, a .
 
 func (w *defaultResponseWriter) WriteError(err error) error {
 	resp := protocol.NewErrorResponse(w.req.ID(), api.CodeUnknown, err.Error())
-	if werr, ok := err.(*api.Error); ok {
+	var werr *api.Error
+	if errors.As(err, &werr) {
 		resp.Code = werr.Code
 	}
 	return w.sendResponse(resp)
@@ -517,7 +526,7 @@ func (w *defaultResponseWriter) WriteJobOutput(output string, outputType api.Job
 	return w.sendResponse(resp)
 }
 
-func (w *defaultResponseWriter) WriteJobResourceUtil(cpuPercent float64, cpuTime float64, residentMem float64, virtualMem float64) error {
+func (w *defaultResponseWriter) WriteJobResourceUtil(cpuPercent, cpuTime, residentMem, virtualMem float64) error {
 	rid := w.req.ID()
 	resp := protocol.NewJobResourceResponse(nextResponseID(), false)
 	resp.Sequences = []protocol.StreamSequence{
@@ -569,8 +578,8 @@ func (w *defaultResponseWriter) WriteClusterInfo(o ClusterOptions) error {
 
 func (w *defaultResponseWriter) WriteClusters(o []ClusterOptions) error {
 	clusters := make([]protocol.ClusterInfo, len(o))
-	for i, c := range o {
-		clusters[i] = c.toProtocol()
+	for i := range o {
+		clusters[i] = o[i].toProtocol()
 	}
 	resp := protocol.NewMultiClusterInfoResponse(w.req.ID(), nextResponseID(),
 		clusters)
@@ -613,7 +622,7 @@ func newStreamStore(ctx context.Context) *streamStore {
 }
 
 // Start starts a stream for the given request ID and returns a context. This context
-// will be cancelled when Cancel() is called.
+// will be canceled when Cancel() is called.
 func (s *streamStore) Start(requestID uint64) context.Context {
 	s.Lock()
 	defer s.Unlock()

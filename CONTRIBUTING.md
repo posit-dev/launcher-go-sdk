@@ -260,23 +260,20 @@ func TestNewFeature(t *testing.T) {
 Example:
 
 ```go
-// JobCache provides thread-safe job storage with pub/sub for status updates.
-//
-// The cache can operate in memory-only mode or with persistent storage using
-// BoltDB. Users can only access their own jobs, and the cache automatically
-// removes jobs after the configured expiration period.
+// JobCache provides thread-safe in-memory job storage with pub/sub for status
+// updates. Users can only access their own jobs, and the cache automatically
+// removes jobs after the configured expiration period. The scheduler is the
+// source of truth; plugins should populate the cache during Bootstrap() and
+// keep it in sync via periodic polling.
 type JobCache struct {
     // ...
 }
 
-// NewJobCache creates a new job cache instance.
+// NewJobCache creates a new in-memory job cache instance.
 //
-// If dir is empty, the cache operates in memory-only mode. Otherwise, jobs
-// are persisted to a BoltDB database in the specified directory.
-//
-// The cache starts background goroutines for job expiration and pub/sub
-// management. These goroutines are stopped when ctx is cancelled.
-func NewJobCache(ctx context.Context, lgr *slog.Logger, dir string) (*JobCache, error) {
+// The cache starts background goroutines for pub/sub management. These
+// goroutines are stopped when ctx is cancelled.
+func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
     // ...
 }
 ```

@@ -111,7 +111,7 @@ type Error struct { /* ... */ }
 
 #### `cache` - Job Storage
 
-Provides persistent and in-memory job storage:
+Provides in-memory job storage with pub/sub for status updates:
 
 ```go
 type JobCache struct { /* ... */ }
@@ -184,7 +184,7 @@ The Runtime understands the meaning of each request and dispatches the correct a
 
 ### Job cache / repository component
 
-The cache maintains a store of jobs. It supports two storage backends (in-memory and BoltDB), provides pub/sub for status update notifications, enforces user permissions, and automatically expires old jobs. The cache acts as both the job repository and the status notification system -- when a job is updated via `Update` or `AddOrUpdate`, the cache notifies any active status stream subscribers automatically.
+The cache maintains an in-memory store of jobs, provides pub/sub for status update notifications, enforces user permissions, and automatically expires old jobs. The cache acts as both the job repository and the status notification system -- when a job is updated via `Update` or `AddOrUpdate`, the cache notifies any active status stream subscribers automatically. The scheduler is always the source of truth for job state; the cache is a local working copy that plugins should populate during `Bootstrap()` and keep in sync via periodic polling.
 
 ### Stream components
 
@@ -209,7 +209,7 @@ When a plugin is launched by the Launcher, the following steps occur:
 6. `Runtime.Run` is called, which:
    a. Initializes the protocol communicator (stdin/stdout)
    b. Receives and responds to the Bootstrap request (version negotiation)
-   c. If the plugin implements `BootstrappedPlugin`, calls `Bootstrap`
+   c. If the plugin implements `BootstrappedPlugin`, calls `Bootstrap` — this is where plugins should re-read active jobs from the scheduler into the cache
    d. Begins the heartbeat response loop
    e. Enters normal operation, dispatching requests to plugin methods
 7. The plugin runs until the context is cancelled or a fatal error occurs
@@ -355,26 +355,15 @@ type Error struct {
 
 ## Job cache design
 
-### Storage backends
+### Storage and startup
 
-Two storage options:
-
-1. **In-memory**: Fast, no persistence
-2. **BoltDB**: Persistent, survives restarts
+The cache uses in-memory storage. The scheduler is the source of truth for job state — the cache is a local working copy that plugins populate at startup and keep in sync during operation.
 
 ```go
-// In-memory
-cache, _ := cache.NewJobCache(ctx, lgr, "")
-
-// Persistent
-cache, _ := cache.NewJobCache(ctx, lgr, "/var/lib/plugin")
+cache, _ := cache.NewJobCache(ctx, lgr)
 ```
 
-**Why two backends?**
-- Simple plugins don't need persistence
-- Complex plugins need recovery after restart
-- BoltDB is embedded (no external DB needed)
-- Both share same API
+Plugins should implement `BootstrappedPlugin` and use `Bootstrap()` to re-read active jobs from the scheduler into the cache before accepting requests. A periodic sync loop (e.g., every 5 seconds) should then reconcile cache state with the scheduler during normal operation. This is consistent with how all existing Launcher plugins (Local, Kubernetes, Slurm) operate.
 
 ### Pub/sub for status updates
 
@@ -663,23 +652,6 @@ Alternative: gRPC, HTTP
 - No connection multiplexing
 
 **Verdict**: Simplicity wins for this use case.
-
-### Why BoltDB for persistence?
-
-Alternatives: SQLite, PostgreSQL, files
-
-**Pros of BoltDB**:
-- Embedded (no external process)
-- Key-value model matches use case
-- Atomicity, Consistency, Isolation, and Durability (ACID) transactions
-- Pure Go (easy deployment)
-
-**Cons**:
-- Single writer at a time
-- No SQL queries
-- Less tooling than SQLite
-
-**Verdict**: Embedding and simplicity outweigh SQL features.
 
 ### Why separate `api` package?
 

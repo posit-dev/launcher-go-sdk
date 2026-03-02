@@ -7,6 +7,7 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/api"
 )
 
+// ErrUnknownRequestType is returned when an unknown request type is encountered.
 var ErrUnknownRequestType = fmt.Errorf("unknown request type")
 
 // Request is a generic Launcher request message.
@@ -22,7 +23,7 @@ type Request interface {
 func requestFromJSON(buf []byte) (Request, error) {
 	var base BaseRequest
 	if err := json.Unmarshal(buf, &base); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMsgInvalid, err)
+		return nil, fmt.Errorf("%w: %v", ErrMsgInvalid, err) //nolint:errorlint // intentionally wrapping only the sentinel error
 	}
 	if !base.Valid() {
 		return nil, fmt.Errorf("%w: %s", ErrMsgInvalid, string(buf))
@@ -36,12 +37,20 @@ func requestFromJSON(buf []byte) (Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal(buf, req) // We know this can be unmarshalled.
-	return req.(Request), nil
+	_ = json.Unmarshal(buf, req) //nolint:errcheck // We know this can be unmarshalled.
+	r, ok := req.(Request)
+	if !ok {
+		panic("requestForType returned a non-Request type")
+	}
+	return r, nil
 }
 
 func requestForType(rt requestType) (interface{}, error) {
 	switch rt {
+	case requestHeartbeat:
+		// Heartbeat is handled before requestForType is called; reaching
+		// here indicates a programming error.
+		return nil, fmt.Errorf("%w: unexpected heartbeat in requestForType", ErrUnknownRequestType)
 	case requestBootstrap:
 		return &BootstrapRequest{}, nil
 	case requestSubmitJob:
@@ -86,7 +95,7 @@ const (
 	requestSetLoadBalancerNodes requestType = 201
 )
 
-// Base fields shared by all request types.
+// BaseRequest contains base fields shared by all request types.
 type BaseRequest struct {
 	MessageType *requestType `json:"messageType"`
 	RequestID   *uint64      `json:"requestId"`
@@ -110,88 +119,88 @@ func (r BaseRequest) Valid() bool {
 	return r.MessageType != nil && r.RequestID != nil
 }
 
-// The heartbeat request.
+// HeartbeatRequest is the heartbeat request.
 type HeartbeatRequest struct {
 	BaseRequest
 }
 
-// The bootstrap request.
+// BootstrapRequest is the bootstrap request.
 type BootstrapRequest struct {
 	BaseRequest
 	Version api.Version `json:"version"`
 }
 
-// Base fields shared by all request types that involve a user.
+// BaseUserRequest contains base fields shared by all request types that involve a user.
 type BaseUserRequest struct {
 	BaseRequest
 	Username    string `json:"username"`
 	ReqUsername string `json:"requestUsername"`
 }
 
-// The submit job request.
+// SubmitJobRequest is the submit job request.
 type SubmitJobRequest struct {
 	BaseUserRequest
 	Job *api.Job `json:"job"`
 }
 
-// Base fields shared by all request types that specify a job.
+// BaseJobRequest contains base fields shared by all request types that specify a job.
 type BaseJobRequest struct {
 	BaseUserRequest
 	JobID        api.JobID `json:"jobId"`
 	EncodedJobID string    `json:"encodedJobId"`
 }
 
-// The job state request.
+// JobStateRequest is the job state request.
 type JobStateRequest struct {
 	BaseJobRequest
 	api.JobFilter
 }
 
-// Base fields shared by all streaming request types.
+// BaseJobStreamRequest contains base fields shared by all streaming request types.
 type BaseJobStreamRequest struct {
 	BaseJobRequest
 	Cancel bool `json:"cancel"`
 }
 
-// The job status stream request.
+// JobStatusStreamRequest is the job status stream request.
 type JobStatusStreamRequest struct {
 	BaseJobStreamRequest
 }
 
-// The control job request.
+// ControlJobRequest is the control job request.
 type ControlJobRequest struct {
 	BaseJobRequest
 	Operation api.JobOperation `json:"operation"`
 }
 
-// The job output stream request.
+// JobOutputRequest is the job output stream request.
 type JobOutputRequest struct {
 	BaseJobStreamRequest
 	Output api.JobOutput `json:"outputType"`
 }
 
-// The job resource utilization stream request.
+// JobResourceUtilRequest is the job resource utilization stream request.
 type JobResourceUtilRequest struct {
 	BaseJobStreamRequest
 }
 
-// The job network request.
+// JobNetworkRequest is the job network request.
 type JobNetworkRequest struct {
 	BaseJobRequest
 }
 
-// The cluster info request.
+// ClusterInfoRequest is the cluster info request.
 type ClusterInfoRequest struct {
 	BaseUserRequest
 }
 
-// The set load balanced nodes request.
+// SetLoadBalancerNodesRequest is the set load balanced nodes request.
 type SetLoadBalancerNodesRequest struct {
 	BaseUserRequest
 	Nodes []api.Node `json:"nodes"`
 }
 
-// Extension mechanism for supporting multiple clusters.
+// MultiClusterInfoRequest is an extension mechanism for supporting multiple clusters.
 type MultiClusterInfoRequest struct {
 	BaseUserRequest
 }
@@ -219,47 +228,47 @@ type responseBase struct {
 	ResponseID  uint64       `json:"responseId"`
 }
 
-// The heartbeat response.
+// HeartbeatResponse is the heartbeat response.
 type HeartbeatResponse = responseBase
 
-// Create a new heartbeat response.
+// NewHeartbeatResponse creates a new heartbeat response.
 func NewHeartbeatResponse() *HeartbeatResponse {
 	return &HeartbeatResponse{responseHeartbeat, 0, 0}
 }
 
-// The error response.
+// ErrorResponse is the error response.
 type ErrorResponse struct {
 	responseBase
 	Code api.ErrCode `json:"errorCode"`
 	Msg  string      `json:"errorMessage"`
 }
 
-// Create a new error response.
+// NewErrorResponse creates a new error response.
 func NewErrorResponse(requestID uint64, code api.ErrCode, msg string) *ErrorResponse {
 	base := responseBase{responseError, requestID, 0}
 	return &ErrorResponse{responseBase: base, Code: code, Msg: msg}
 }
 
-// The bootstrap response.
+// BootstrapResponse is the bootstrap response.
 type BootstrapResponse struct {
 	responseBase
 	Version api.Version `json:"version"`
 }
 
-// Create a new bootstrap response.
-func NewBootstrapResponse(requestID uint64, responseID uint64) *BootstrapResponse {
+// NewBootstrapResponse creates a new bootstrap response.
+func NewBootstrapResponse(requestID, responseID uint64) *BootstrapResponse {
 	base := responseBase{responseBootstrap, requestID, responseID}
 	return &BootstrapResponse{base, api.APIVersion}
 }
 
-// The job state response.
+// JobStateResponse is the job state response.
 type JobStateResponse struct {
 	responseBase
 	Jobs []*api.Job `json:"jobs"`
 }
 
-// Create a new job state response.
-func NewJobStateResponse(requestID uint64, responseID uint64, jobs []*api.Job) *JobStateResponse {
+// NewJobStateResponse creates a new job state response.
+func NewJobStateResponse(requestID, responseID uint64, jobs []*api.Job) *JobStateResponse {
 	base := responseBase{responseJobState, requestID, responseID}
 	if jobs == nil {
 		// Ensure we never send null.
@@ -268,7 +277,7 @@ func NewJobStateResponse(requestID uint64, responseID uint64, jobs []*api.Job) *
 	return &JobStateResponse{responseBase: base, Jobs: jobs}
 }
 
-// The job status stream response.
+// JobStatusStreamResponse is the job status stream response.
 type JobStatusStreamResponse struct {
 	responseBase
 	Sequences []StreamSequence `json:"sequences"`
@@ -279,7 +288,7 @@ type JobStatusStreamResponse struct {
 	Code      string           `json:"statusCode,omitempty"`
 }
 
-// Create a new job status stream response.
+// NewJobStatusStreamResponse creates a new job status stream response.
 func NewJobStatusStreamResponse(responseID uint64, id, status, msg string) *JobStatusStreamResponse {
 	base := responseBase{responseJobStatus, 0, responseID}
 	return &JobStatusStreamResponse{
@@ -291,7 +300,7 @@ func NewJobStatusStreamResponse(responseID uint64, id, status, msg string) *JobS
 	}
 }
 
-// The job output stream response.
+// JobOutputResponse is the job output stream response.
 type JobOutputResponse struct {
 	responseBase
 	SequenceID uint64 `json:"seqId"`
@@ -300,13 +309,13 @@ type JobOutputResponse struct {
 	Complete   bool   `json:"complete"`
 }
 
-// Create a new job output stream response.
-func NewJobOutputStreamResponse(requestID uint64, responseID uint64) *JobOutputResponse {
+// NewJobOutputStreamResponse creates a new job output stream response.
+func NewJobOutputStreamResponse(requestID, responseID uint64) *JobOutputResponse {
 	base := responseBase{responseJobOutput, requestID, responseID}
 	return &JobOutputResponse{responseBase: base}
 }
 
-// The job resource utilization stream response.
+// JobResourceResponse is the job resource utilization stream response.
 type JobResourceResponse struct {
 	responseBase
 	Sequences   []StreamSequence `json:"sequences"`
@@ -317,7 +326,7 @@ type JobResourceResponse struct {
 	Complete    bool             `json:"complete"`
 }
 
-// Create a new job resource utilization stream response.
+// NewJobResourceResponse creates a new job resource utilization stream response.
 func NewJobResourceResponse(responseID uint64, complete bool) *JobResourceResponse {
 	base := responseBase{responseJobResourceUtil, 0, responseID}
 	return &JobResourceResponse{
@@ -327,28 +336,28 @@ func NewJobResourceResponse(responseID uint64, complete bool) *JobResourceRespon
 	}
 }
 
-// Request/sequence structure for streaming requests.
+// StreamSequence is a request/sequence structure for streaming requests.
 type StreamSequence struct {
 	RequestID  uint64 `json:"requestId"`
 	SequenceID uint64 `json:"seqId"`
 }
 
-// The control job response.
+// ControlJobResponse is the control job response.
 type ControlJobResponse struct {
 	responseBase
 	Msg      string `json:"statusMessage"`
 	Complete bool   `json:"operationComplete"`
 }
 
-// Create a new control job response.
-func NewControlJobResponse(requestID uint64, responseID uint64, complete bool, msg string) *ControlJobResponse {
+// NewControlJobResponse creates a new control job response.
+func NewControlJobResponse(requestID, responseID uint64, complete bool, msg string) *ControlJobResponse {
 	base := responseBase{responseControlJob, requestID, responseID}
 	return &ControlJobResponse{
 		responseBase: base, Msg: msg, Complete: complete,
 	}
 }
 
-// The job network response.
+// JobNetworkResponse is the job network response.
 type JobNetworkResponse struct {
 	responseBase
 	Host      string   `json:"host"`
@@ -356,8 +365,8 @@ type JobNetworkResponse struct {
 	Endpoints []string `json:"endpoints,omitempty"`
 }
 
-// Create a new job network response.
-func NewJobNetworkResponse(requestID uint64, responseID uint64, host string, addr []string) *JobNetworkResponse {
+// NewJobNetworkResponse creates a new job network response.
+func NewJobNetworkResponse(requestID, responseID uint64, host string, addr []string) *JobNetworkResponse {
 	base := responseBase{responseJobNetwork, requestID, responseID}
 	if addr == nil {
 		addr = []string{} // Ensure we never send null.
@@ -365,13 +374,13 @@ func NewJobNetworkResponse(requestID uint64, responseID uint64, host string, add
 	return &JobNetworkResponse{responseBase: base, Host: host, Addr: addr}
 }
 
-// The cluster info response.
+// ClusterInfoResponse is the cluster info response.
 type ClusterInfoResponse struct {
 	responseBase
 	ClusterInfo
 }
 
-// Body of a cluster info response; reused for the multicluster extension.
+// ClusterInfo is the body of a cluster info response; reused for the multicluster extension.
 type ClusterInfo struct {
 	Containers   bool                      `json:"supportsContainers"`
 	Configs      []api.JobConfig           `json:"config"`
@@ -387,8 +396,8 @@ type ClusterInfo struct {
 	Name         string                    `json:"name,omitempty"`
 }
 
-// Create a new cluster info response.
-func NewClusterInfoResponse(requestID uint64, responseID uint64, cluster ClusterInfo) *ClusterInfoResponse {
+// NewClusterInfoResponse creates a new cluster info response.
+func NewClusterInfoResponse(requestID, responseID uint64, cluster ClusterInfo) *ClusterInfoResponse {
 	base := responseBase{responseClusterInfo, requestID, responseID}
 	if cluster.Configs == nil {
 		cluster.Configs = []api.JobConfig{}
@@ -405,14 +414,14 @@ func NewClusterInfoResponse(requestID uint64, responseID uint64, cluster Cluster
 	return &ClusterInfoResponse{responseBase: base, ClusterInfo: cluster}
 }
 
-// Extension mechanism for supporting multiple clusters.
+// MultiClusterInfoResponse is an extension mechanism for supporting multiple clusters.
 type MultiClusterInfoResponse struct {
 	responseBase
 	Clusters []ClusterInfo `json:"clusters"`
 }
 
-// Create a new multicluster info response.
-func NewMultiClusterInfoResponse(requestID uint64, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
+// NewMultiClusterInfoResponse creates a new multicluster info response.
+func NewMultiClusterInfoResponse(requestID, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
 	base := responseBase{responseMultiClusterInfo, requestID, responseID}
 	if clusters == nil {
 		clusters = []ClusterInfo{} // Ensure we never send null.
@@ -420,11 +429,11 @@ func NewMultiClusterInfoResponse(requestID uint64, responseID uint64, clusters [
 	return &MultiClusterInfoResponse{responseBase: base, Clusters: clusters}
 }
 
-// The set load balanced nodes response.
+// SetLoadBalancerNodesResponse is the set load balanced nodes response.
 type SetLoadBalancerNodesResponse = responseBase
 
-// Create a new set load balanced nodes response.
-func NewSetLoadBalancerNodesResponse(requestID uint64, responseID uint64) *SetLoadBalancerNodesResponse {
+// NewSetLoadBalancerNodesResponse creates a new set load balanced nodes response.
+func NewSetLoadBalancerNodesResponse(requestID, responseID uint64) *SetLoadBalancerNodesResponse {
 	return &SetLoadBalancerNodesResponse{
 		responseSetLoadBalancerNodes, requestID, responseID,
 	}

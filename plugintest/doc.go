@@ -59,7 +59,7 @@
 //
 //	func TestGetJob(t *testing.T) {
 //		// Arrange: set up test data
-//		cache, _ := cache.NewJobCache(context.Background(), logger, "")
+//		cache, _ := cache.NewJobCache(context.Background(), logger)
 //		job := plugintest.NewJob().
 //			WithID("test-1").
 //			WithUser("alice").

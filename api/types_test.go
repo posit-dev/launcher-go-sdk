@@ -1,4 +1,4 @@
-package api
+package api //nolint:revive // short package name is intentional for this API package
 
 import (
 	"errors"

@@ -15,7 +15,7 @@ import (
 func newTestPlugin(t *testing.T) *InMemoryPlugin {
 	t.Helper()
 	lgr := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	c, err := cache.NewJobCache(context.Background(), lgr, "")
+	c, err := cache.NewJobCache(context.Background(), lgr)
 	if err != nil {
 		t.Fatalf("failed to create job cache: %v", err)
 	}

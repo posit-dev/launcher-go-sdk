@@ -38,7 +38,7 @@ just bench              # Run benchmarks
 |---------|---------|
 | `api/` | Type definitions for Launcher Plugin API (Job, JobFilter, errors, etc.) |
 | `launcher/` | Core plugin interface (`Plugin`) and runtime — the main SDK entry point |
-| `cache/` | Thread-safe job storage with pub/sub for status updates (in-memory or BoltDB) |
+| `cache/` | Thread-safe in-memory job storage with pub/sub for status updates |
 | `logger/` | Workbench-style structured logging via `log/slog` |
 | `conformance/` | Automated behavioral tests to verify plugin compliance |
 | `plugintest/` | Testing utilities: mock writers, builders, assertions |
@@ -61,7 +61,6 @@ just bench              # Run benchmarks
 
 ## Key Dependencies
 
-- `go.etcd.io/bbolt` — Persistent job storage backend
 - `golang.org/x/tools` — Go tooling (goimports)
 - `golangci-lint` — Dev-only via `tools.go` build tag
 
