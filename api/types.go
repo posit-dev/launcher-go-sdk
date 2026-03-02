@@ -1,5 +1,5 @@
 // Package api defines types for the Launcher Plugin API.
-package api
+package api //nolint:revive // "api" is the intentional package name for public API types
 
 import (
 	"encoding/json"

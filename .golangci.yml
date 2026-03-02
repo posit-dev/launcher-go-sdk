@@ -37,6 +37,8 @@ linters:
         - G114  # http.ListenAndServe — not relevant for a non-server library
         - G301  # Directory permissions — overly opinionated for library code
         - G302  # File permissions — overly opinionated for library code
+        - G703  # Path traversal taint — config paths intentionally read from env vars
+        - G705  # XSS taint — CLI/library code, no HTTP response surfaces
 
     gocritic:
       enabled-tags:
