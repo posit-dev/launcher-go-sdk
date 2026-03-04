@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **BREAKING**: `cache.NewJobCache` no longer accepts a `dir` parameter. The SDK now defaults to in-memory caching, which aligns with how Launcher plugins are expected to work: the scheduler owns job state, and plugins populate the cache during `Bootstrap()` and keep it in sync via periodic polling.
+- **BREAKING**: Add `context.Context` as the first parameter to all non-streaming `Plugin` methods (`SubmitJob`, `GetJob`, `GetJobs`, `ControlJob`, `GetJobNetwork`, `ClusterInfo`) and extension interfaces (`Bootstrap`, `GetClusters`). Streaming methods already accepted context.
+- **BREAKING**: `Job.ID` type changed from `string` to `api.JobID` for end-to-end type safety. Since `api.JobID` is a named `string` type, JSON serialization and literal assignments work unchanged.
+- **BREAKING**: Cache public methods (`Lookup`, `Update`, `WriteJob`, `RunningJobContext`, `StreamJobStatus`) now accept `api.JobID` instead of `string`.
+- **BREAKING**: Conformance and plugintest helpers updated to use `api.JobID` (`SubmitJob` returns `api.JobID`; `GetJob`, `ControlJob`, `WaitForStatus`, `FindJobByID`, `AssertJobID`, `NewJobWithID`, `WithID` accept `api.JobID`).
+- Replace `goto`-based poll loops with idiomatic `for`+`select` loops in cache and protocol packages
+- Add panic recovery to cache background goroutine
+- Use non-blocking channel sends to prevent deadlocks under load
+- Add nil guards to stream `ResponseWriter` methods
+- Convert `Prune` to range-over-func syntax
+
+### Fixed
+- File handle leak in logger when debug log creation fails
+- Race window in `RunningJobContext` with post-subscribe recheck
+- JSON unmarshal error in `requestFromJSON` now handled instead of silently discarded
+- Go version requirement corrected from 1.25 to 1.24 in README
+- `WithMemory()` reference corrected to `WithLimit()` in CONTRIBUTING.md
 
 ### Removed
 - BoltDB (`go.etcd.io/bbolt`) dependency — in-memory caching is now the standard approach
