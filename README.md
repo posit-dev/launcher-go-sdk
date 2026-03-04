@@ -194,7 +194,7 @@ Once we release v1.0.0, we will strictly maintain backwards compatibility within
 
 ## Requirements
 
-- Go 1.25 or later
+- Go 1.24 or later
 - Linux, macOS (we test on Linux and macOS)
 - Workbench 2023.09.0 or later or Connect 2024.08.0 or later (for deployment)
 

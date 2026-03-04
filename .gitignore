@@ -30,6 +30,11 @@ go.work
 examples/inmemory/inmemory
 examples/inmemory/inmemory-plugin
 
+# Built binaries in root
+/inmemory
+/smoketest
+cmd/smoketest/smoketest
+
 # Temporary files
 *.tmp
 *.log
