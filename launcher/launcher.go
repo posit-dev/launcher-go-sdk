@@ -506,7 +506,14 @@ func (w *defaultResponseWriter) WriteJobs(jobs []*api.Job) error {
 	return w.sendResponse(resp)
 }
 
+// errNotStreamWriter is returned when a streaming method is called on a
+// non-stream response writer.
+var errNotStreamWriter = fmt.Errorf("method called on non-stream response writer")
+
 func (w *defaultResponseWriter) WriteJobStatus(id api.JobID, status, msg string) error {
+	if w.store == nil {
+		return errNotStreamWriter
+	}
 	rid := w.req.ID()
 	resp := protocol.NewJobStatusStreamResponse(nextResponseID(), string(id),
 		status, msg)
@@ -517,6 +524,9 @@ func (w *defaultResponseWriter) WriteJobStatus(id api.JobID, status, msg string)
 }
 
 func (w *defaultResponseWriter) WriteJobOutput(output string, outputType api.JobOutput) error {
+	if w.store == nil {
+		return errNotStreamWriter
+	}
 	rid := w.req.ID()
 	resp := protocol.NewJobOutputStreamResponse(rid, nextResponseID())
 	resp.SequenceID = w.store.SequenceID(rid)
@@ -527,6 +537,9 @@ func (w *defaultResponseWriter) WriteJobOutput(output string, outputType api.Job
 }
 
 func (w *defaultResponseWriter) WriteJobResourceUtil(cpuPercent, cpuTime, residentMem, virtualMem float64) error {
+	if w.store == nil {
+		return errNotStreamWriter
+	}
 	rid := w.req.ID()
 	resp := protocol.NewJobResourceResponse(nextResponseID(), false)
 	resp.Sequences = []protocol.StreamSequence{
@@ -540,6 +553,9 @@ func (w *defaultResponseWriter) WriteJobResourceUtil(cpuPercent, cpuTime, reside
 }
 
 func (w *defaultResponseWriter) Close() error {
+	if w.store == nil {
+		return nil
+	}
 	// Only some types of request have a completion message.
 	switch w.req.(type) {
 	case *protocol.JobOutputRequest:

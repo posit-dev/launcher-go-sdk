@@ -67,23 +67,23 @@ func (c *Communicator) Serve(ctx context.Context, handler func(Request, chan<- i
 		c.lgr.Debug("Stopping reader...")
 		close(reqCh)
 	}()
-poll:
-	select {
-	case <-ctx.Done():
-		break
-	case err = <-errCh:
-		break
-	case req, ok := <-reqCh:
-		if !ok {
-			c.lgr.Info("Request stream ended")
-			break
+	for {
+		select {
+		case <-ctx.Done():
+		case err = <-errCh:
+		case req, ok := <-reqCh:
+			if !ok {
+				c.lgr.Info("Request stream ended")
+			} else {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					handler(req, respCh)
+				}()
+				continue
+			}
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			handler(req, respCh)
-		}()
-		goto poll
+		break
 	}
 	c.lgr.Debug("Closing communicator...")
 	wg.Wait()
