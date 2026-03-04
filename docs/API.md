@@ -1287,7 +1287,7 @@ Creates a new JobBuilder.
 #### Selected methods
 
 ```go
-func (b *JobBuilder) WithID(id string) *JobBuilder
+func (b *JobBuilder) WithID(id api.JobID) *JobBuilder
 func (b *JobBuilder) WithUser(user string) *JobBuilder
 func (b *JobBuilder) WithName(name string) *JobBuilder
 func (b *JobBuilder) WithCommand(cmd string) *JobBuilder
@@ -1441,7 +1441,7 @@ Asserts at least N status updates were sent.
 #### Function: FindJobByID
 
 ```go
-func FindJobByID(jobs []*api.Job, id string) *api.Job
+func FindJobByID(jobs []*api.Job, id api.JobID) *api.Job
 ```
 
 Finds a job by ID in a slice of jobs.
@@ -1547,7 +1547,7 @@ Exported helpers for use in custom tests:
 #### Function: SubmitJob
 
 ```go
-func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) string
+func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) api.JobID
 ```
 
 Calls `p.SubmitJob` and returns the job ID. Fails the test if the plugin returns an error.
@@ -1555,7 +1555,7 @@ Calls `p.SubmitJob` and returns the job ID. Fails the test if the plugin returns
 #### Function: GetJob
 
 ```go
-func GetJob(p launcher.Plugin, user string, id string, fields []string) (*api.Job, *api.Error)
+func GetJob(p launcher.Plugin, user string, id api.JobID, fields []string) (*api.Job, *api.Error)
 ```
 
 Calls `p.GetJob` and returns the job or error.
@@ -1571,7 +1571,7 @@ Calls `p.GetJobs` with the given filter and returns matching jobs.
 #### Function: ControlJob
 
 ```go
-func ControlJob(p launcher.Plugin, user string, id string, op api.JobOperation) (*plugintest.ControlResult, *api.Error)
+func ControlJob(p launcher.Plugin, user string, id api.JobID, op api.JobOperation) (*plugintest.ControlResult, *api.Error)
 ```
 
 Calls `p.ControlJob` and returns the result or error.
@@ -1579,7 +1579,7 @@ Calls `p.ControlJob` and returns the result or error.
 #### Function: WaitForStatus
 
 ```go
-func WaitForStatus(ctx context.Context, p launcher.Plugin, user, id, status string) (*api.Job, error)
+func WaitForStatus(ctx context.Context, p launcher.Plugin, user string, id api.JobID, status string) (*api.Job, error)
 ```
 
 Polls `p.GetJob` until the job reaches the expected status or the context expires.
@@ -1587,7 +1587,7 @@ Polls `p.GetJob` until the job reaches the expected status or the context expire
 #### Function: WaitForTerminalStatus
 
 ```go
-func WaitForTerminalStatus(ctx context.Context, p launcher.Plugin, user, id string) (*api.Job, error)
+func WaitForTerminalStatus(ctx context.Context, p launcher.Plugin, user string, id api.JobID) (*api.Job, error)
 ```
 
 Polls `p.GetJob` until the job reaches any terminal status or the context expires.
@@ -1603,7 +1603,7 @@ Starts a `GetJobStatuses` stream in a background goroutine. Returns the mock wri
 #### Function: CollectOutputStream
 
 ```go
-func CollectOutputStream(ctx context.Context, p launcher.Plugin, user, id string, outputType api.JobOutput) (*plugintest.MockStreamResponseWriter, <-chan struct{})
+func CollectOutputStream(ctx context.Context, p launcher.Plugin, user string, id api.JobID, outputType api.JobOutput) (*plugintest.MockStreamResponseWriter, <-chan struct{})
 ```
 
 Starts a `GetJobOutput` stream in a background goroutine. Same lifecycle contract as `CollectStatusStream`.

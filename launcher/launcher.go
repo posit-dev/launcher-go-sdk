@@ -378,7 +378,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			p.SubmitJob(ctx, w, r.Username, r.Job)
 		case *protocol.JobStateRequest:
 			w = newResponseWriter(req, ch)
-			if r.JobID != "*" {
+			if !r.JobID.IsWildcard() {
 				p.GetJob(ctx, w, r.Username, r.JobID, r.Fields)
 				return
 			}
@@ -390,14 +390,14 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			}
 			ctx := s.Start(r.ID())
 			w = newStreamWriter(req, ch, s)
-			if r.JobID != "*" {
+			if !r.JobID.IsWildcard() {
 				p.GetJobStatus(ctx, w, r.Username, r.JobID)
 				return
 			}
 			p.GetJobStatuses(ctx, w, r.Username)
 		case *protocol.ControlJobRequest:
 			w = newResponseWriter(req, ch)
-			if r.JobID == "*" {
+			if r.JobID.IsWildcard() {
 				//nolint:errcheck // sendResponse currently always returns nil
 				w.WriteErrorf(api.CodeInvalidRequest,
 					"Cannot control all jobs simultaneously. Please specify a single Job ID.")

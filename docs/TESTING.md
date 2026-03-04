@@ -590,7 +590,7 @@ func TestSubmitJob_RealSlurm(t *testing.T) {
         time.Sleep(5 * time.Second)
 
         w2 := plugintest.NewMockResponseWriter()
-        plugin.GetJob(context.Background(), w2, os.Getenv("USER"), api.JobID(jobID), nil)
+        plugin.GetJob(context.Background(), w2, os.Getenv("USER"), jobID, nil)
 
         if w2.HasError() {
             t.Fatalf("Error getting job: %v", w2.LastError())
@@ -900,11 +900,11 @@ time.Sleep(10 * time.Second)
 ### 5. Use t.Helper()
 
 ```go
-func assertJobExists(t *testing.T, plugin *MyPlugin, jobID string) {
+func assertJobExists(t *testing.T, plugin *MyPlugin, jobID api.JobID) {
     t.Helper() // Makes failures report correct line numbers
 
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJob(context.Background(), w, "alice", api.JobID(jobID), nil)
+    plugin.GetJob(context.Background(), w, "alice", jobID, nil)
 
     if w.HasError() {
         t.Fatalf("Job %s not found", jobID)

@@ -180,6 +180,16 @@ func TestJobID(t *testing.T) {
 	if string(id) != "test-123" {
 		t.Errorf("JobID conversion failed: got %q, want %q", string(id), "test-123")
 	}
+
+	if id.IsWildcard() {
+		t.Error("regular JobID should not be wildcard")
+	}
+	if !JobIDWildcard.IsWildcard() {
+		t.Error("JobIDWildcard should be wildcard")
+	}
+	if string(JobIDWildcard) != "*" {
+		t.Errorf("JobIDWildcard = %q, want %q", string(JobIDWildcard), "*")
+	}
 }
 
 func TestJobOutput(t *testing.T) {

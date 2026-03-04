@@ -111,7 +111,7 @@ conformance_test.go
 ### Unique ID generation
 
 ```go
-id := fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
+id := api.JobID(fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1)))
 ```
 
 Uses an atomic counter for thread-safe ID generation.
@@ -238,7 +238,7 @@ func TestSubmitJob(t *testing.T) {
 
     // Check status changed
     w2 := plugintest.NewMockResponseWriter()
-    plugin.GetJob(context.Background(), w2, "alice", api.JobID(returnedJob.ID), nil)
+    plugin.GetJob(context.Background(), w2, "alice", returnedJob.ID, nil)
     updatedJob := w2.LastJobs()[0]
     plugintest.AssertJobStatus(t, updatedJob, api.StatusRunning)
 }

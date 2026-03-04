@@ -112,7 +112,7 @@ func testLaunchWorkflow(t *testing.T, p launcher.Plugin, user string, profile *P
 	if profile.NetworkAvailable {
 		t.Run("NetworkAvailableWhenRunning", func(t *testing.T) {
 			w := plugintest.NewMockResponseWriter()
-			p.GetJobNetwork(context.Background(), w, user, api.JobID(id))
+			p.GetJobNetwork(context.Background(), w, user, id)
 			plugintest.AssertNoError(t, w)
 		})
 	}

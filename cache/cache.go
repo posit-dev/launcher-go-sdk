@@ -124,7 +124,7 @@ func (r *JobCache) Lookup(user string, id api.JobID, fn func(*api.Job)) error {
 // one based on it. It then notifies any clients streaming updates.
 func (r *JobCache) AddOrUpdate(job *api.Job) error {
 	// updated flag not needed; new-vs-existing is already logged inside the callback.
-	_, err := r.store.Update(job.ID, func(cur *api.Job) *api.Job {
+	_, err := r.store.Update(string(job.ID), func(cur *api.Job) *api.Job {
 		if cur == nil {
 			r.lgr.Debug("Added job to store", "id", job.ID,
 				"status", job.Status)
@@ -249,7 +249,7 @@ func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamRespons
 	done := false
 	err := r.Lookup(user, id, func(job *api.Job) {
 		//nolint:errcheck // fire-and-forget convenience wrapper
-		w.WriteJobStatus(api.JobID(job.ID), job.Status, job.StatusMsg)
+		w.WriteJobStatus(job.ID, job.Status, job.StatusMsg)
 		// Break off early if we know there will be no further updates.
 		if api.TerminalStatus(job.Status) {
 			done = true
@@ -286,8 +286,7 @@ func (r *JobCache) StreamJobStatuses(ctx context.Context, w launcher.StreamRespo
 	r.store.JobsForUser(user, nil, func(jobs []*api.Job) {
 		for _, job := range jobs {
 			//nolint:errcheck // fire-and-forget convenience wrapper
-			w.WriteJobStatus(api.JobID(job.ID), job.Status,
-				job.StatusMsg)
+			w.WriteJobStatus(job.ID, job.Status, job.StatusMsg)
 		}
 	})
 	ch := make(chan *statusUpdate, 1)
@@ -359,7 +358,7 @@ func (r *JobCache) Prune(interval time.Duration) func(func(*api.Job) bool) {
 		},
 	}
 	return func(yield func(*api.Job) bool) {
-		var candidates []string
+		var candidates []api.JobID
 		for job := range r.store.Jobs("*", terminal) {
 			if job.LastUpdated == nil ||
 				job.LastUpdated.After(cutoff) {
@@ -371,7 +370,7 @@ func (r *JobCache) Prune(interval time.Duration) func(func(*api.Job) bool) {
 			candidates = append(candidates, job.ID)
 		}
 		for _, id := range candidates {
-			if err := r.store.Delete(id); err != nil {
+			if err := r.store.Delete(string(id)); err != nil {
 				r.lgr.Error("Failed to prune job", "id", id,
 					"error", err)
 			}
@@ -456,7 +455,7 @@ type statusUpdate struct {
 
 func newStatusUpdateFromJob(job *api.Job) *statusUpdate {
 	return &statusUpdate{
-		api.JobID(job.ID), job.User, job.Status, job.StatusMsg,
+		job.ID, job.User, job.Status, job.StatusMsg,
 	}
 }
 

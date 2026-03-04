@@ -57,13 +57,13 @@ type MyPlugin struct {
 }
 
 func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
-    job.ID = fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
+    job.ID = api.JobID(fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1)))
     job.Status = api.StatusPending
     if err := p.cache.AddOrUpdate(job); err != nil {
         w.WriteError(err)
         return
     }
-    p.cache.WriteJob(w, user, api.JobID(job.ID))
+    p.cache.WriteJob(w, user, job.ID)
 }
 
 func (p *MyPlugin) GetJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, fields []string) {

@@ -275,9 +275,15 @@ func (o *JobOutput) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// JobID is represented by a string, but may be "*" in some cases to indicate
-// any or all jobs.
+// JobID is a string-based job identifier. The special value "*" (see
+// [JobIDWildcard]) indicates any or all jobs in some API contexts.
 type JobID string
+
+// JobIDWildcard is the sentinel value meaning "any or all jobs."
+const JobIDWildcard JobID = "*"
+
+// IsWildcard reports whether the JobID is the wildcard value.
+func (id JobID) IsWildcard() bool { return id == JobIDWildcard }
 
 // Container holds container fields for a Job.
 type Container struct {
@@ -330,7 +336,7 @@ func (e *Env) Set(s string) error {
 // Job is Launcher's representation of a job.
 type Job struct {
 	// The unique ID of the Job.
-	ID string `json:"id"`
+	ID JobID `json:"id"`
 
 	// The cluster of the Job. Optional.
 	Cluster string `json:"cluster,omitempty"`

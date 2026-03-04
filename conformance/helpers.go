@@ -49,7 +49,7 @@ const defaultPollInterval = 50 * time.Millisecond
 // SubmitJob calls p.SubmitJob and returns the ID of the submitted job.
 // It fails the test immediately if the plugin returns an error or does
 // not return exactly one job, since tests cannot continue without a job ID.
-func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) string {
+func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) api.JobID {
 	t.Helper()
 	w := plugintest.NewMockResponseWriter()
 	p.SubmitJob(context.Background(), w, user, job)
@@ -69,9 +69,9 @@ func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) strin
 // GetJob calls p.GetJob and returns the job, or nil and the error if the
 // plugin returned an error. Unlike [SubmitJob], this does not fail the test
 // on error, allowing callers to assert on error conditions.
-func GetJob(p launcher.Plugin, user, id string, fields []string) (*api.Job, *api.Error) {
+func GetJob(p launcher.Plugin, user string, id api.JobID, fields []string) (*api.Job, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
-	p.GetJob(context.Background(), w, user, api.JobID(id), fields)
+	p.GetJob(context.Background(), w, user, id, fields)
 	if w.HasError() {
 		return nil, w.LastError()
 	}
@@ -90,9 +90,9 @@ func GetJobs(p launcher.Plugin, user string, filter *api.JobFilter) []*api.Job {
 }
 
 // ControlJob calls p.ControlJob and returns the result and any error.
-func ControlJob(p launcher.Plugin, user, id string, op api.JobOperation) (*plugintest.ControlResult, *api.Error) {
+func ControlJob(p launcher.Plugin, user string, id api.JobID, op api.JobOperation) (*plugintest.ControlResult, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
-	p.ControlJob(context.Background(), w, user, api.JobID(id), op)
+	p.ControlJob(context.Background(), w, user, id, op)
 	if w.HasError() {
 		return nil, w.LastError()
 	}
@@ -106,7 +106,7 @@ func ControlJob(p launcher.Plugin, user, id string, op api.JobOperation) (*plugi
 // or the context expires. Returns the job in the expected status, or an
 // error if the timeout is reached or the job enters a terminal status
 // that is not the expected one.
-func WaitForStatus(ctx context.Context, p launcher.Plugin, user, id, status string) (*api.Job, error) {
+func WaitForStatus(ctx context.Context, p launcher.Plugin, user string, id api.JobID, status string) (*api.Job, error) {
 	ticker := time.NewTicker(defaultPollInterval)
 	defer ticker.Stop()
 
@@ -138,7 +138,7 @@ func WaitForStatus(ctx context.Context, p launcher.Plugin, user, id, status stri
 
 // WaitForTerminalStatus polls p.GetJob until the job reaches any terminal
 // status (Finished, Failed, Killed, Canceled) or the context expires.
-func WaitForTerminalStatus(ctx context.Context, p launcher.Plugin, user, id string) (*api.Job, error) {
+func WaitForTerminalStatus(ctx context.Context, p launcher.Plugin, user string, id api.JobID) (*api.Job, error) {
 	ticker := time.NewTicker(defaultPollInterval)
 	defer ticker.Stop()
 
@@ -190,12 +190,12 @@ func CollectStatusStream(ctx context.Context, p launcher.Plugin, user string) (*
 //
 // The same lifecycle contract as [CollectStatusStream] applies: the caller
 // must cancel ctx and wait on done.
-func CollectOutputStream(ctx context.Context, p launcher.Plugin, user, id string, outputType api.JobOutput) (*plugintest.MockStreamResponseWriter, <-chan struct{}) {
+func CollectOutputStream(ctx context.Context, p launcher.Plugin, user string, id api.JobID, outputType api.JobOutput) (*plugintest.MockStreamResponseWriter, <-chan struct{}) {
 	sw := plugintest.NewMockStreamResponseWriter()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		p.GetJobOutput(ctx, sw, user, api.JobID(id), outputType)
+		p.GetJobOutput(ctx, sw, user, id, outputType)
 	}()
 	return sw, done
 }

@@ -40,7 +40,7 @@ func newTestPlugin(t *testing.T) *testPlugin {
 }
 
 func (p *testPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
-	id := fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
+	id := api.JobID(fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1)))
 	now := time.Now().UTC()
 	job.ID = id
 	job.User = user
@@ -52,7 +52,7 @@ func (p *testPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter, use
 		w.WriteError(err)
 		return
 	}
-	p.cache.WriteJob(w, user, api.JobID(id))
+	p.cache.WriteJob(w, user, id)
 
 	longRunning := false
 	for _, tag := range job.Tags {
@@ -65,7 +65,7 @@ func (p *testPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter, use
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.simulateLifecycle(user, api.JobID(id), longRunning)
+		p.simulateLifecycle(user, id, longRunning)
 	}()
 }
 

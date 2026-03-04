@@ -43,7 +43,7 @@ type InMemoryPlugin struct {
 //  5. Returns the job to the caller
 func (p *InMemoryPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
 	// Generate a unique job ID using an atomic counter
-	id := fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
+	id := api.JobID(fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1)))
 
 	// Set job metadata
 	now := time.Now().UTC()
@@ -60,7 +60,7 @@ func (p *InMemoryPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter,
 	}
 
 	// Return the job to the caller
-	p.cache.WriteJob(w, user, api.JobID(id))
+	p.cache.WriteJob(w, user, id)
 
 	// Check if this is a long-running job (e.g., an interactive session).
 	// Jobs tagged "long-running" stay in the Running state indefinitely
@@ -80,7 +80,7 @@ func (p *InMemoryPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter,
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.simulateJobLifecycle(user, api.JobID(id), longRunning)
+		p.simulateJobLifecycle(user, id, longRunning)
 	}()
 }
 

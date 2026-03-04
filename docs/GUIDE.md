@@ -308,10 +308,10 @@ func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, use
     }
 
     // 5. Return the job
-    p.cache.WriteJob(w, user, api.JobID(id))
+    p.cache.WriteJob(w, user, id)
 
     // 6. Start monitoring (optional)
-    go p.monitorJob(user, api.JobID(id), schedulerID)
+    go p.monitorJob(user, id, schedulerID)
 }
 ```
 
