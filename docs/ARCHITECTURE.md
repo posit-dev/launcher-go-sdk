@@ -428,7 +428,7 @@ Captures all responses for assertions:
 
 ```go
 w := plugintest.NewMockResponseWriter()
-plugin.SubmitJob(w, "alice", job)
+plugin.SubmitJob(context.Background(), w, "alice", job)
 
 assert.True(t, w.HasError() == false)
 assert.Equal(t, 1, len(w.AllJobs()))

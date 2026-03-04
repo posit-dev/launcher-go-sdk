@@ -79,7 +79,7 @@ func testLaunchWorkflow(t *testing.T, p launcher.Plugin, user string, profile *P
 	// Step 1: ClusterInfo — products call this first to populate the launch UI.
 	t.Run("ClusterInfoReturnsConfig", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.ClusterInfo(w, user)
+		p.ClusterInfo(context.Background(), w, user)
 		plugintest.AssertNoError(t, w)
 		if w.ClusterInfo == nil {
 			t.Error("ClusterInfo must return cluster configuration")
@@ -112,7 +112,7 @@ func testLaunchWorkflow(t *testing.T, p launcher.Plugin, user string, profile *P
 	if profile.NetworkAvailable {
 		t.Run("NetworkAvailableWhenRunning", func(t *testing.T) {
 			w := plugintest.NewMockResponseWriter()
-			p.GetJobNetwork(w, user, api.JobID(id))
+			p.GetJobNetwork(context.Background(), w, user, api.JobID(id))
 			plugintest.AssertNoError(t, w)
 		})
 	}
@@ -169,7 +169,7 @@ func testListWorkflow(t *testing.T, p launcher.Plugin, user string, profile *Pro
 			Tags:     []string{tag},
 			Statuses: []string{api.StatusFinished, api.StatusFailed, api.StatusKilled, api.StatusCanceled},
 		}
-		p.GetJobs(w, user, filter, nil)
+		p.GetJobs(context.Background(), w, user, filter, nil)
 		plugintest.AssertNoError(t, w)
 
 		jobs := w.AllJobs()

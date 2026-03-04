@@ -515,39 +515,37 @@ The api package contains all type definitions matching the Launcher Plugin API v
 
 ```go
 type Job struct {
-    ID             string                  `json:"id"`
-    Name           string                  `json:"name,omitempty"`
-    User           string                  `json:"user,omitempty"`
-    Status         string                  `json:"status,omitempty"`
-    StatusMessage  string                  `json:"statusMessage,omitempty"`
-    Command        string                  `json:"command,omitempty"`
-    Exe            string                  `json:"exe,omitempty"`
-    Args           []string                `json:"args,omitempty"`
-    Stdin          string                  `json:"stdin,omitempty"`
-    Environment    map[string]string       `json:"environment,omitempty"`
-    StdoutFile     string                  `json:"stdoutFile,omitempty"`
-    StderrFile     string                  `json:"stderrFile,omitempty"`
-    WorkingDirectory string                `json:"workingDirectory,omitempty"`
-    Host           string                  `json:"host,omitempty"`
-    Cluster        string                  `json:"cluster,omitempty"`
-    Queue          string                  `json:"queue,omitempty"`
-    CPUCount       int                     `json:"cpuCount,omitempty"`
-    Memory         string                  `json:"memory,omitempty"`
-    MemorySwap     string                  `json:"memorySwap,omitempty"`
-    GPUs           int                     `json:"gpus,omitempty"`
-    Submitted      *time.Time              `json:"submitted,omitempty"`
-    Queued         *time.Time              `json:"queued,omitempty"`
-    Started        *time.Time              `json:"started,omitempty"`
-    Finished       *time.Time              `json:"finished,omitempty"`
-    LastUpdated    *time.Time              `json:"lastUpdated,omitempty"`
-    ExitCode       *int                    `json:"exitCode,omitempty"`
-    ResourceLimits []ResourceLimit         `json:"resourceLimits,omitempty"`
-    Mounts         []Mount                 `json:"mounts,omitempty"`
-    Container      *Container              `json:"container,omitempty"`
-    Exposedports   []Port                  `json:"exposedPorts,omitempty"`
-    Tags           []string                `json:"tags,omitempty"`
-    Config         map[string]string       `json:"config,omitempty"`
-    Constraints    []PlacementConstraint   `json:"placementConstraints,omitempty"`
+    ID          string                  `json:"id"`
+    Cluster     string                  `json:"cluster,omitempty"`
+    Name        string                  `json:"name,omitempty"`
+    User        string                  `json:"user,omitempty"`
+    Group       string                  `json:"group,omitempty"`
+    Queues      []string                `json:"queues,omitempty"`
+    WorkDir     string                  `json:"workingDirectory,omitempty"`
+    Container   *Container              `json:"container,omitempty"`
+    Host        string                  `json:"host,omitempty"`
+    Status      string                  `json:"status,omitempty"`
+    StatusMsg   string                  `json:"statusMessage,omitempty"`
+    StatusCode  string                  `json:"statusCode,omitempty"`
+    Pid         *int                    `json:"pid,omitempty"`
+    ExitCode    *int                    `json:"exitCode,omitempty"`
+    Command     string                  `json:"command,omitempty"`
+    Exe         string                  `json:"exe,omitempty"`
+    Stdout      string                  `json:"stdoutFile,omitempty"`
+    Stderr      string                  `json:"stderrFile,omitempty"`
+    Stdin       string                  `json:"stdin,omitempty"`
+    Args        []string                `json:"args,omitempty"`
+    Env         []Env                   `json:"environment,omitempty"`
+    Constraints []PlacementConstraint   `json:"placementConstraints,omitempty"`
+    LastUpdated *time.Time              `json:"lastUpdateTime,omitempty"`
+    Submitted   *time.Time              `json:"submissionTime,omitempty"`
+    Ports       []Port                  `json:"exposedPorts,omitempty"`
+    Mounts      []Mount                 `json:"mounts,omitempty"`
+    Config      []JobConfig             `json:"config,omitempty"`
+    Limits      []ResourceLimit         `json:"resourceLimits,omitempty"`
+    Tags        []string                `json:"tags,omitempty"`
+    Metadata    map[string]interface{}  `json:"metadata,omitempty"`
+    Profile     string                  `json:"resourceProfile,omitempty"`
 }
 ```
 
@@ -560,27 +558,32 @@ Represents a job in the launcher system.
 | `ID` | Unique identifier assigned by the plugin on submission. |
 | `Name` | Human-readable name for the job. |
 | `User` | The username of the user who launched the job. |
+| `Group` | The group of the user who launched the job. |
 | `Status` | Current status (see [Job Statuses](#job-statuses)). |
-| `StatusMessage` | Optional message or reason for the current status. |
+| `StatusMsg` | Optional message or reason for the current status. |
+| `StatusCode` | Standard code/enum for the current status, if known. |
 | `Command` | Shell command to execute. Mutually exclusive with `Exe`. |
 | `Exe` | Executable path to run. Mutually exclusive with `Command`. |
 | `Args` | Arguments for the command or executable. |
 | `Stdin` | Standard input to pass to the process. |
-| `Environment` | Environment variables for the job. |
-| `StdoutFile` / `StderrFile` | File locations for capturing output. |
-| `WorkingDirectory` | Working directory for the process. |
+| `Env` | Environment variables for the job (`[]Env` name/value pairs). |
+| `Stdout` / `Stderr` | File locations for capturing output. |
+| `WorkDir` | Working directory for the process. |
 | `Host` | The host on which the job is (or was) running. |
 | `Cluster` | The cluster the job belongs to. |
-| `Queue` | The scheduler queue used for the job. |
-| `Submitted` / `Queued` / `Started` / `Finished` | Timestamps for job lifecycle events. |
-| `LastUpdated` | Time of the last update to the job. |
+| `Queues` | The scheduler queues available or used for the job. |
+| `Pid` | Process ID of the job, if applicable. |
 | `ExitCode` | Exit code of the process (set when job completes). |
+| `Submitted` / `LastUpdated` | Timestamps for job submission and last update. |
+| `Limits` | Resource limits set for the job (`[]ResourceLimit`). |
 | `Mounts` | Filesystem mounts to apply when running the job. |
 | `Container` | Container configuration, if the cluster supports containers. |
-| `Exposedports` | Exposed network ports, if containers are used. |
+| `Ports` | Exposed network ports, if containers are used. |
 | `Tags` | Tags for filtering jobs. |
-| `Config` | Custom configuration values set by the user. |
+| `Config` | Custom configuration values (`[]JobConfig` name/value/type). |
 | `Constraints` | Placement constraints selected for the job. |
+| `Metadata` | User-specified metadata for extension attributes. |
+| `Profile` | Resource profile for the job (default `"custom"`). |
 
 ### Type: JobID
 
@@ -612,7 +615,7 @@ Filter criteria for querying jobs.
 ### Type: JobOperation
 
 ```go
-type JobOperation string
+type JobOperation int
 ```
 
 Operation to perform on a job.
@@ -620,11 +623,11 @@ Operation to perform on a job.
 **Constants**:
 ```go
 const (
-    OperationCancel  JobOperation = "cancel"
-    OperationKill    JobOperation = "kill"
-    OperationStop    JobOperation = "stop"
-    OperationSuspend JobOperation = "suspend"
-    OperationResume  JobOperation = "resume"
+    OperationSuspend JobOperation = iota
+    OperationResume
+    OperationStop
+    OperationKill
+    OperationCancel
 )
 ```
 

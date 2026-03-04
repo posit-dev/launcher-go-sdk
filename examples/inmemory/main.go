@@ -41,7 +41,7 @@ type InMemoryPlugin struct {
 //  3. Stores the job in the cache
 //  4. Starts a background goroutine to simulate job execution
 //  5. Returns the job to the caller
-func (p *InMemoryPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Job) {
+func (p *InMemoryPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
 	// Generate a unique job ID using an atomic counter
 	id := fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
 
@@ -60,7 +60,7 @@ func (p *InMemoryPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *
 	}
 
 	// Return the job to the caller
-	p.cache.WriteJob(w, user, id)
+	p.cache.WriteJob(w, user, api.JobID(id))
 
 	// Check if this is a long-running job (e.g., an interactive session).
 	// Jobs tagged "long-running" stay in the Running state indefinitely
@@ -80,7 +80,7 @@ func (p *InMemoryPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.simulateJobLifecycle(user, id, longRunning)
+		p.simulateJobLifecycle(user, api.JobID(id), longRunning)
 	}()
 }
 
@@ -90,7 +90,7 @@ func (p *InMemoryPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *
 //
 // If longRunning is true, the job stays in Running state indefinitely until
 // explicitly controlled (stop, kill, cancel). This models interactive sessions.
-func (p *InMemoryPlugin) simulateJobLifecycle(user, id string, longRunning bool) {
+func (p *InMemoryPlugin) simulateJobLifecycle(user string, id api.JobID, longRunning bool) {
 	// After 500ms, mark the job as running if it's still pending.
 	// We use a short delay so that control operations (cancel/kill/stop)
 	// can be tested while the job is pending.
@@ -121,8 +121,8 @@ func (p *InMemoryPlugin) simulateJobLifecycle(user, id string, longRunning bool)
 
 // GetJob returns information about a specific job.
 // The cache handles looking up the job and checking permissions.
-func (p *InMemoryPlugin) GetJob(w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
-	p.cache.WriteJob(w, user, string(id))
+func (p *InMemoryPlugin) GetJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
+	p.cache.WriteJob(w, user, id)
 }
 
 // GetJobs returns information about all jobs matching the filter.
@@ -130,7 +130,7 @@ func (p *InMemoryPlugin) GetJob(w launcher.ResponseWriter, user string, id api.J
 //   - Status (e.g., only running jobs)
 //   - Tags (e.g., jobs with specific labels)
 //   - Time range (e.g., jobs submitted in the last hour)
-func (p *InMemoryPlugin) GetJobs(w launcher.ResponseWriter, user string, filter *api.JobFilter, fields []string) {
+func (p *InMemoryPlugin) GetJobs(_ context.Context, w launcher.ResponseWriter, user string, filter *api.JobFilter, fields []string) {
 	p.cache.WriteJobs(w, user, filter)
 }
 
@@ -143,7 +143,7 @@ func (p *InMemoryPlugin) GetJobs(w launcher.ResponseWriter, user string, filter 
 //   - Respecting context cancellation
 func (p *InMemoryPlugin) GetJobOutput(ctx context.Context, w launcher.StreamResponseWriter, user string, id api.JobID, outputType api.JobOutput) {
 	// First, verify the job exists
-	err := p.cache.Lookup(user, string(id), func(_ *api.Job) {})
+	err := p.cache.Lookup(user, id, func(_ *api.Job) {})
 	if err != nil {
 		w.WriteError(err)
 		return
@@ -187,7 +187,7 @@ func (p *InMemoryPlugin) GetJobOutput(ctx context.Context, w launcher.StreamResp
 // The cache handles the streaming and automatically sends updates
 // when the job's status changes.
 func (p *InMemoryPlugin) GetJobStatus(ctx context.Context, w launcher.StreamResponseWriter, user string, id api.JobID) {
-	p.cache.StreamJobStatus(ctx, w, user, string(id))
+	p.cache.StreamJobStatus(ctx, w, user, id)
 }
 
 // GetJobStatuses streams status updates for all jobs belonging to the user.
@@ -208,7 +208,7 @@ func (p *InMemoryPlugin) GetJobResourceUtil(ctx context.Context, w launcher.Stre
 
 	for {
 		// Look up the job and send resource utilization
-		err := p.cache.Lookup(user, string(id), func(job *api.Job) {
+		err := p.cache.Lookup(user, id, func(job *api.Job) {
 			// In a real plugin, you would measure actual CPU/memory usage
 			// For this demo, we send simulated values
 			w.WriteJobResourceUtil(
@@ -225,7 +225,8 @@ func (p *InMemoryPlugin) GetJobResourceUtil(ctx context.Context, w launcher.Stre
 		})
 
 		if err != nil {
-			// Job not found or permission denied
+			//nolint:errcheck // fire-and-forget convenience wrapper
+			w.WriteError(err)
 			return
 		}
 
@@ -245,12 +246,13 @@ func (p *InMemoryPlugin) GetJobResourceUtil(ctx context.Context, w launcher.Stre
 //   - Validating the operation is valid for the current job status
 //   - Updating job status based on the operation
 //   - Handling unsupported operations
-func (p *InMemoryPlugin) ControlJob(w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
-	err := p.cache.Update(user, string(id), func(job *api.Job) *api.Job {
+func (p *InMemoryPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
+	var validationErr error
+	err := p.cache.Update(user, id, func(job *api.Job) *api.Job {
 		// Validate that the operation is valid for the current status
 		expectedStatus := op.ValidForStatus()
 		if expectedStatus != job.Status {
-			w.WriteErrorf(api.CodeInvalidJobState,
+			validationErr = api.Errorf(api.CodeInvalidJobState,
 				"Job must be %s to %s it (current status: %s)",
 				expectedStatus, op, job.Status)
 			return job // Return unchanged job
@@ -258,7 +260,7 @@ func (p *InMemoryPlugin) ControlJob(w launcher.ResponseWriter, user string, id a
 
 		// This example plugin doesn't support suspend/resume
 		if op == api.OperationSuspend || op == api.OperationResume {
-			w.WriteErrorf(api.CodeRequestNotSupported,
+			validationErr = api.Errorf(api.CodeRequestNotSupported,
 				"Operation %s is not supported by this plugin", op)
 			return job
 		}
@@ -280,21 +282,26 @@ func (p *InMemoryPlugin) ControlJob(w launcher.ResponseWriter, user string, id a
 			job.Status = api.StatusCanceled
 		}
 
-		// Report success
-		w.WriteControlJob(true, fmt.Sprintf("Job %s successful", op))
 		return job
 	})
 
 	if err != nil {
+		//nolint:errcheck // fire-and-forget convenience wrapper
 		w.WriteError(err)
+	} else if validationErr != nil {
+		//nolint:errcheck // fire-and-forget convenience wrapper
+		w.WriteError(validationErr)
+	} else {
+		//nolint:errcheck // fire-and-forget convenience wrapper
+		w.WriteControlJob(true, fmt.Sprintf("Job %s successful", op))
 	}
 }
 
 // GetJobNetwork returns network information for a job.
 // For containerized jobs, this would include the container's IP addresses.
 // For this example, we just return the hostname.
-func (p *InMemoryPlugin) GetJobNetwork(w launcher.ResponseWriter, user string, id api.JobID) {
-	err := p.cache.Lookup(user, string(id), func(_ *api.Job) {
+func (p *InMemoryPlugin) GetJobNetwork(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID) {
+	err := p.cache.Lookup(user, id, func(_ *api.Job) {
 		hostname, _ := os.Hostname()
 		// In a real plugin, you would query the actual job's network info
 		w.WriteJobNetwork(hostname, []string{"127.0.0.1"})
@@ -312,7 +319,7 @@ func (p *InMemoryPlugin) GetJobNetwork(w launcher.ResponseWriter, user string, i
 //   - What container images are available (if containers are supported)
 //   - What custom configuration options are available
 //   - What placement constraints are available
-func (p *InMemoryPlugin) ClusterInfo(w launcher.ResponseWriter, user string) {
+func (p *InMemoryPlugin) ClusterInfo(_ context.Context, w launcher.ResponseWriter, user string) {
 	w.WriteClusterInfo(launcher.ClusterOptions{
 		// Define available queues
 		Queues:       []string{"default", "high-priority", "batch"},

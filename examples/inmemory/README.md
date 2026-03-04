@@ -223,7 +223,7 @@ func TestSubmitJob(t *testing.T) {
         WithCommand("echo hello").
         Build()
 
-    plugin.SubmitJob(w, "alice", job)
+    plugin.SubmitJob(context.Background(), w, "alice", job)
 
     // Verify the response
     plugintest.AssertNoError(t, w)
@@ -238,7 +238,7 @@ func TestSubmitJob(t *testing.T) {
 
     // Check status changed
     w2 := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w2, "alice", api.JobID(returnedJob.ID), nil)
+    plugin.GetJob(context.Background(), w2, "alice", api.JobID(returnedJob.ID), nil)
     updatedJob := w2.LastJobs()[0]
     plugintest.AssertJobStatus(t, updatedJob, api.StatusRunning)
 }

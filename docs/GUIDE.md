@@ -107,11 +107,11 @@ type MyPlugin struct {
 All plugins must implement the `launcher.Plugin` interface (10 methods):
 
 ```go
-func (p *MyPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Job) {
+func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
     // Handle job submission
 }
 
-func (p *MyPlugin) GetJob(w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
+func (p *MyPlugin) GetJob(ctx context.Context, w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
     // Return job information
 }
 
@@ -211,9 +211,9 @@ Plugins communicate back to the Launcher via ResponseWriters:
 For methods that send one response:
 
 ```go
-func (p *MyPlugin) GetJob(w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
+func (p *MyPlugin) GetJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
     // Option 1: Use cache helper
-    p.cache.WriteJob(w, user, string(id))
+    p.cache.WriteJob(w, user, id)
 
     // Option 2: Write error
     w.WriteError(api.Errorf(api.CodeJobNotFound, "Job %s not found", id))
@@ -283,7 +283,7 @@ The cache:
 ### SubmitJob - accept new jobs
 
 ```go
-func (p *MyPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Job) {
+func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
     // 1. Generate unique job ID
     id := generateJobID()  // Your implementation
     job.ID = id
@@ -308,10 +308,10 @@ func (p *MyPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Jo
     }
 
     // 5. Return the job
-    p.cache.WriteJob(w, user, id)
+    p.cache.WriteJob(w, user, api.JobID(id))
 
     // 6. Start monitoring (optional)
-    go p.monitorJob(user, id, schedulerID)
+    go p.monitorJob(user, api.JobID(id), schedulerID)
 }
 ```
 
@@ -325,14 +325,14 @@ func (p *MyPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Jo
 ### GetJob / GetJobs - query jobs
 
 ```go
-func (p *MyPlugin) GetJob(w launcher.ResponseWriter, user string,
+func (p *MyPlugin) GetJob(_ context.Context, w launcher.ResponseWriter, user string,
     id api.JobID, fields []string) {
 
     // The cache handles permission checking
-    p.cache.WriteJob(w, user, string(id))
+    p.cache.WriteJob(w, user, id)
 }
 
-func (p *MyPlugin) GetJobs(w launcher.ResponseWriter, user string,
+func (p *MyPlugin) GetJobs(_ context.Context, w launcher.ResponseWriter, user string,
     filter *api.JobFilter, fields []string) {
 
     // Filter can specify:
@@ -346,10 +346,10 @@ func (p *MyPlugin) GetJobs(w launcher.ResponseWriter, user string,
 ### ControlJob - stop/kill/cancel jobs
 
 ```go
-func (p *MyPlugin) ControlJob(w launcher.ResponseWriter, user string,
+func (p *MyPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string,
     id api.JobID, op api.JobOperation) {
 
-    err := p.cache.Update(user, string(id), func(job *api.Job) *api.Job {
+    err := p.cache.Update(user, id, func(job *api.Job) *api.Job {
         // 1. Validate operation is valid for current status
         if op.ValidForStatus() != job.Status {
             w.WriteErrorf(api.CodeInvalidJobState,
@@ -389,7 +389,7 @@ func (p *MyPlugin) GetJobStatus(ctx context.Context,
 
     // The cache handles streaming status updates automatically
     // It will send an update whenever the job's status changes
-    p.cache.StreamJobStatus(ctx, w, user, string(id))
+    p.cache.StreamJobStatus(ctx, w, user, id)
 }
 ```
 
@@ -409,7 +409,7 @@ func (p *MyPlugin) GetJobOutput(ctx context.Context,
     defer w.Close()
 
     // Verify job exists
-    err := p.cache.Lookup(user, string(id), func(_ *api.Job) {})
+    err := p.cache.Lookup(user, id, func(_ *api.Job) {})
     if err != nil {
         w.WriteError(err)
         return
@@ -447,7 +447,7 @@ func (p *MyPlugin) GetJobResourceUtil(ctx context.Context,
     defer ticker.Stop()
 
     for {
-        err := p.cache.Lookup(user, string(id), func(job *api.Job) {
+        err := p.cache.Lookup(user, id, func(job *api.Job) {
             // Query resource usage from scheduler
             cpu, mem := getResourceUsage(job.ID)
 
@@ -481,10 +481,10 @@ func (p *MyPlugin) GetJobResourceUtil(ctx context.Context,
 ### GetJobNetwork - return network info
 
 ```go
-func (p *MyPlugin) GetJobNetwork(w launcher.ResponseWriter,
+func (p *MyPlugin) GetJobNetwork(_ context.Context, w launcher.ResponseWriter,
     user string, id api.JobID) {
 
-    err := p.cache.Lookup(user, string(id), func(job *api.Job) {
+    err := p.cache.Lookup(user, id, func(job *api.Job) {
         // Query which node the job is on
         hostname, ips := getJobNetwork(job.ID)
 
@@ -500,7 +500,7 @@ func (p *MyPlugin) GetJobNetwork(w launcher.ResponseWriter,
 ### ClusterInfo - return cluster capabilities
 
 ```go
-func (p *MyPlugin) ClusterInfo(w launcher.ResponseWriter, user string) {
+func (p *MyPlugin) ClusterInfo(_ context.Context, w launcher.ResponseWriter, user string) {
     w.WriteClusterInfo(launcher.ClusterOptions{
         // Available queues
         Queues:       []string{"default", "high-priority", "gpu"},
@@ -739,7 +739,7 @@ func TestSubmitJob(t *testing.T) {
         Build()
 
     // Test
-    plugin.SubmitJob(w, "alice", job)
+    plugin.SubmitJob(context.Background(), w, "alice", job)
 
     // Assert
     plugintest.AssertNoError(t, w)

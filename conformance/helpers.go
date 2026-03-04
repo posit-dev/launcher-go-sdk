@@ -52,7 +52,7 @@ const defaultPollInterval = 50 * time.Millisecond
 func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) string {
 	t.Helper()
 	w := plugintest.NewMockResponseWriter()
-	p.SubmitJob(w, user, job)
+	p.SubmitJob(context.Background(), w, user, job)
 	if w.HasError() {
 		t.Fatalf("SubmitJob returned error: %v", w.LastError())
 	}
@@ -71,7 +71,7 @@ func SubmitJob(t *testing.T, p launcher.Plugin, user string, job *api.Job) strin
 // on error, allowing callers to assert on error conditions.
 func GetJob(p launcher.Plugin, user, id string, fields []string) (*api.Job, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
-	p.GetJob(w, user, api.JobID(id), fields)
+	p.GetJob(context.Background(), w, user, api.JobID(id), fields)
 	if w.HasError() {
 		return nil, w.LastError()
 	}
@@ -85,14 +85,14 @@ func GetJob(p launcher.Plugin, user, id string, fields []string) (*api.Job, *api
 // GetJobs calls p.GetJobs with the given filter and returns all matching jobs.
 func GetJobs(p launcher.Plugin, user string, filter *api.JobFilter) []*api.Job {
 	w := plugintest.NewMockResponseWriter()
-	p.GetJobs(w, user, filter, nil)
+	p.GetJobs(context.Background(), w, user, filter, nil)
 	return w.AllJobs()
 }
 
 // ControlJob calls p.ControlJob and returns the result and any error.
 func ControlJob(p launcher.Plugin, user, id string, op api.JobOperation) (*plugintest.ControlResult, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
-	p.ControlJob(w, user, api.JobID(id), op)
+	p.ControlJob(context.Background(), w, user, api.JobID(id), op)
 	if w.HasError() {
 		return nil, w.LastError()
 	}

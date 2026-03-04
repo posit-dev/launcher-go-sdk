@@ -156,14 +156,28 @@ func ConfigPathf(format string, a ...interface{}) string {
 }
 
 // Plugin is the main interface that all launcher plugins must implement.
+//
+// Every method receives a context.Context. For streaming methods (those that
+// accept a [StreamResponseWriter]), the context is request-scoped and canceled
+// when the Launcher sends a cancel request or the plugin shuts down. For all
+// other methods the same server-wide context is passed to every call; it is
+// canceled only on plugin shutdown (e.g. SIGTERM). The Launcher protocol does
+// not support per-request cancellation for non-streaming operations. If a
+// non-streaming method needs a per-operation deadline, create a child context:
+//
+//	func (p *MyPlugin) SubmitJob(ctx context.Context, w ResponseWriter, ...) {
+//	    opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+//	    defer cancel()
+//	    // use opCtx for the operation
+//	}
 type Plugin interface {
-	SubmitJob(w ResponseWriter, user string, job *api.Job)
+	SubmitJob(ctx context.Context, w ResponseWriter, user string, job *api.Job)
 
-	GetJob(w ResponseWriter, user string, id api.JobID, fields []string)
+	GetJob(ctx context.Context, w ResponseWriter, user string, id api.JobID, fields []string)
 
-	GetJobs(w ResponseWriter, user string, filter *api.JobFilter, fields []string)
+	GetJobs(ctx context.Context, w ResponseWriter, user string, filter *api.JobFilter, fields []string)
 
-	ControlJob(w ResponseWriter, user string, id api.JobID, op api.JobOperation)
+	ControlJob(ctx context.Context, w ResponseWriter, user string, id api.JobID, op api.JobOperation)
 
 	GetJobStatus(ctx context.Context, w StreamResponseWriter, user string, id api.JobID)
 
@@ -173,9 +187,9 @@ type Plugin interface {
 
 	GetJobResourceUtil(ctx context.Context, w StreamResponseWriter, user string, id api.JobID)
 
-	GetJobNetwork(w ResponseWriter, user string, id api.JobID)
+	GetJobNetwork(ctx context.Context, w ResponseWriter, user string, id api.JobID)
 
-	ClusterInfo(w ResponseWriter, user string)
+	ClusterInfo(ctx context.Context, w ResponseWriter, user string)
 }
 
 // BootstrappedPlugin can be implemented by plugins that want an explicit
@@ -187,7 +201,7 @@ type BootstrappedPlugin interface {
 	// with the plugin. No other methods will be called before it returns. A
 	// response writer is provided to send (unrecoverable) errors back to
 	// Launcher.
-	Bootstrap(ResponseWriter)
+	Bootstrap(ctx context.Context, w ResponseWriter)
 }
 
 // MultiClusterPlugin can be implemented by plugins that allow job submission to
@@ -195,7 +209,7 @@ type BootstrappedPlugin interface {
 // by all Launcher implementations.
 type MultiClusterPlugin interface {
 	Plugin
-	GetClusters(w MultiClusterResponseWriter, user string)
+	GetClusters(ctx context.Context, w MultiClusterResponseWriter, user string)
 }
 
 // LoadBalancedPlugin can be implemented by plugins that must be aware of other
@@ -209,6 +223,10 @@ type LoadBalancedPlugin interface {
 }
 
 // ResponseWriter is the interface for writing responses back to the Launcher.
+// Methods return error to allow implementations flexibility in error reporting
+// (e.g., mock writers can simulate failures). Most plugin code treats writes as
+// fire-and-forget operations since encoding errors are handled by the protocol
+// layer and will cause the plugin to terminate.
 type ResponseWriter interface {
 	// WriteErrorf sends a formatted error with the given code to the
 	// Launcher.
@@ -337,7 +355,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			}
 			bsPlugin, ok := p.(BootstrappedPlugin)
 			if ok {
-				bsPlugin.Bootstrap(w)
+				bsPlugin.Bootstrap(ctx, w)
 			}
 			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteBootstrap()
@@ -357,14 +375,14 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			if r.Job.Profile == "" {
 				r.Job.Profile = "custom"
 			}
-			p.SubmitJob(w, r.Username, r.Job)
+			p.SubmitJob(ctx, w, r.Username, r.Job)
 		case *protocol.JobStateRequest:
 			w = newResponseWriter(req, ch)
 			if r.JobID != "*" {
-				p.GetJob(w, r.Username, r.JobID, r.Fields)
+				p.GetJob(ctx, w, r.Username, r.JobID, r.Fields)
 				return
 			}
-			p.GetJobs(w, r.Username, &r.JobFilter, r.Fields)
+			p.GetJobs(ctx, w, r.Username, &r.JobFilter, r.Fields)
 		case *protocol.JobStatusStreamRequest:
 			if r.Cancel {
 				s.Cancel(r.ID())
@@ -398,7 +416,7 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 					r.Operation, r.JobID)
 				return
 			}
-			p.ControlJob(w, r.Username, r.JobID, r.Operation)
+			p.ControlJob(ctx, w, r.Username, r.JobID, r.Operation)
 		case *protocol.JobOutputRequest:
 			if r.Cancel {
 				s.Cancel(r.ID())
@@ -417,20 +435,20 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			p.GetJobResourceUtil(ctx, w, r.Username, r.JobID)
 		case *protocol.JobNetworkRequest:
 			w = newResponseWriter(req, ch)
-			p.GetJobNetwork(w, r.Username, r.JobID)
+			p.GetJobNetwork(ctx, w, r.Username, r.JobID)
 		case *protocol.ClusterInfoRequest:
 			w = newResponseWriter(req, ch)
-			p.ClusterInfo(w, r.Username)
+			p.ClusterInfo(ctx, w, r.Username)
 		case *protocol.MultiClusterInfoRequest:
 			w = newResponseWriter(req, ch)
 			mcPlugin, ok := p.(MultiClusterPlugin)
 			if !ok {
 				// Servers must allow multicluster requests to return a
 				// single-cluster response.
-				p.ClusterInfo(w, r.Username)
+				p.ClusterInfo(ctx, w, r.Username)
 				return
 			}
-			mcPlugin.GetClusters(w, r.Username)
+			mcPlugin.GetClusters(ctx, w, r.Username)
 		case *protocol.SetLoadBalancerNodesRequest:
 			w = newResponseWriter(req, ch)
 			lbPlugin, ok := p.(LoadBalancedPlugin)

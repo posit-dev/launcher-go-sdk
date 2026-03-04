@@ -39,7 +39,7 @@ func newTestPlugin(t *testing.T) *testPlugin {
 	return tp
 }
 
-func (p *testPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Job) {
+func (p *testPlugin) SubmitJob(_ context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
 	id := fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
 	now := time.Now().UTC()
 	job.ID = id
@@ -52,7 +52,7 @@ func (p *testPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.
 		w.WriteError(err)
 		return
 	}
-	p.cache.WriteJob(w, user, id)
+	p.cache.WriteJob(w, user, api.JobID(id))
 
 	longRunning := false
 	for _, tag := range job.Tags {
@@ -65,11 +65,11 @@ func (p *testPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.simulateLifecycle(user, id, longRunning)
+		p.simulateLifecycle(user, api.JobID(id), longRunning)
 	}()
 }
 
-func (p *testPlugin) simulateLifecycle(user, id string, longRunning bool) {
+func (p *testPlugin) simulateLifecycle(user string, id api.JobID, longRunning bool) {
 	time.Sleep(50 * time.Millisecond)
 	p.cache.Update(user, id, func(j *api.Job) *api.Job {
 		if j.Status == api.StatusPending {
@@ -93,16 +93,16 @@ func (p *testPlugin) simulateLifecycle(user, id string, longRunning bool) {
 	})
 }
 
-func (p *testPlugin) GetJob(w launcher.ResponseWriter, user string, id api.JobID, _ []string) {
-	p.cache.WriteJob(w, user, string(id))
+func (p *testPlugin) GetJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, _ []string) {
+	p.cache.WriteJob(w, user, id)
 }
 
-func (p *testPlugin) GetJobs(w launcher.ResponseWriter, user string, filter *api.JobFilter, _ []string) {
+func (p *testPlugin) GetJobs(_ context.Context, w launcher.ResponseWriter, user string, filter *api.JobFilter, _ []string) {
 	p.cache.WriteJobs(w, user, filter)
 }
 
-func (p *testPlugin) ControlJob(w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
-	err := p.cache.Update(user, string(id), func(job *api.Job) *api.Job {
+func (p *testPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
+	err := p.cache.Update(user, id, func(job *api.Job) *api.Job {
 		if op.ValidForStatus() != job.Status {
 			w.WriteErrorf(api.CodeInvalidJobState,
 				"Job must be %s to %s it (current status: %s)",
@@ -136,7 +136,7 @@ func (p *testPlugin) ControlJob(w launcher.ResponseWriter, user string, id api.J
 }
 
 func (p *testPlugin) GetJobStatus(ctx context.Context, w launcher.StreamResponseWriter, user string, id api.JobID) {
-	p.cache.StreamJobStatus(ctx, w, user, string(id))
+	p.cache.StreamJobStatus(ctx, w, user, id)
 }
 
 func (p *testPlugin) GetJobStatuses(ctx context.Context, w launcher.StreamResponseWriter, user string) {
@@ -144,7 +144,7 @@ func (p *testPlugin) GetJobStatuses(ctx context.Context, w launcher.StreamRespon
 }
 
 func (p *testPlugin) GetJobOutput(ctx context.Context, w launcher.StreamResponseWriter, user string, id api.JobID, outputType api.JobOutput) {
-	err := p.cache.Lookup(user, string(id), func(_ *api.Job) {})
+	err := p.cache.Lookup(user, id, func(_ *api.Job) {})
 	if err != nil {
 		w.WriteError(err)
 		return
@@ -166,15 +166,15 @@ func (p *testPlugin) GetJobOutput(ctx context.Context, w launcher.StreamResponse
 }
 
 func (p *testPlugin) GetJobResourceUtil(ctx context.Context, _ launcher.StreamResponseWriter, user string, id api.JobID) {
-	err := p.cache.Lookup(user, string(id), func(_ *api.Job) {})
+	err := p.cache.Lookup(user, id, func(_ *api.Job) {})
 	if err != nil {
 		return
 	}
 	<-ctx.Done()
 }
 
-func (p *testPlugin) GetJobNetwork(w launcher.ResponseWriter, user string, id api.JobID) {
-	err := p.cache.Lookup(user, string(id), func(_ *api.Job) {
+func (p *testPlugin) GetJobNetwork(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID) {
+	err := p.cache.Lookup(user, id, func(_ *api.Job) {
 		hostname, _ := os.Hostname()
 		w.WriteJobNetwork(hostname, []string{"127.0.0.1"})
 	})
@@ -183,7 +183,7 @@ func (p *testPlugin) GetJobNetwork(w launcher.ResponseWriter, user string, id ap
 	}
 }
 
-func (p *testPlugin) ClusterInfo(w launcher.ResponseWriter, _ string) {
+func (p *testPlugin) ClusterInfo(_ context.Context, w launcher.ResponseWriter, _ string) {
 	w.WriteClusterInfo(launcher.ClusterOptions{
 		Queues:       []string{"default"},
 		DefaultQueue: "default",

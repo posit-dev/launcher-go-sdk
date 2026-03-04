@@ -220,7 +220,7 @@ func testSubmitInvariants(t *testing.T, p launcher.Plugin, user string, profile 
 	t.Run("ReturnsNonEmptyID", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
 		job := profile.JobFactory(user)
-		p.SubmitJob(w, user, job)
+		p.SubmitJob(context.Background(), w, user, job)
 
 		plugintest.AssertNoError(t, w)
 		plugintest.AssertJobCount(t, w, 1)
@@ -234,7 +234,7 @@ func testSubmitInvariants(t *testing.T, p launcher.Plugin, user string, profile 
 	t.Run("SetsSubmittedTimestamp", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
 		job := profile.JobFactory(user)
-		p.SubmitJob(w, user, job)
+		p.SubmitJob(context.Background(), w, user, job)
 
 		plugintest.AssertNoError(t, w)
 		submitted := w.LastJobs()[0]
@@ -245,11 +245,11 @@ func testSubmitInvariants(t *testing.T, p launcher.Plugin, user string, profile 
 
 	t.Run("TwoJobsGetDifferentIDs", func(t *testing.T) {
 		w1 := plugintest.NewMockResponseWriter()
-		p.SubmitJob(w1, user, profile.JobFactory(user))
+		p.SubmitJob(context.Background(), w1, user, profile.JobFactory(user))
 		plugintest.AssertNoError(t, w1)
 
 		w2 := plugintest.NewMockResponseWriter()
-		p.SubmitJob(w2, user, profile.JobFactory(user))
+		p.SubmitJob(context.Background(), w2, user, profile.JobFactory(user))
 		plugintest.AssertNoError(t, w2)
 
 		id1 := w1.LastJobs()[0].ID
@@ -263,7 +263,7 @@ func testSubmitInvariants(t *testing.T, p launcher.Plugin, user string, profile 
 		w := plugintest.NewMockResponseWriter()
 		job := profile.JobFactory(user)
 		job.Name = "conformance-name-test"
-		p.SubmitJob(w, user, job)
+		p.SubmitJob(context.Background(), w, user, job)
 
 		plugintest.AssertNoError(t, w)
 		submitted := w.LastJobs()[0]
@@ -276,7 +276,7 @@ func testSubmitInvariants(t *testing.T, p launcher.Plugin, user string, profile 
 		w := plugintest.NewMockResponseWriter()
 		job := profile.JobFactory(user)
 		job.Tags = []string{"conformance-tag-a", "conformance-tag-b"}
-		p.SubmitJob(w, user, job)
+		p.SubmitJob(context.Background(), w, user, job)
 
 		plugintest.AssertNoError(t, w)
 		submitted := w.LastJobs()[0]
@@ -301,7 +301,7 @@ func testGetJobInvariants(t *testing.T, p launcher.Plugin, user string, profile 
 
 	t.Run("NotFoundForBogusID", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.GetJob(w, user, "nonexistent-conformance-id-99999", nil)
+		p.GetJob(context.Background(), w, user, "nonexistent-conformance-id-99999", nil)
 		plugintest.AssertErrorCode(t, w, api.CodeJobNotFound)
 	})
 }
@@ -367,7 +367,7 @@ func testGetJobsInvariants(t *testing.T, p launcher.Plugin, user string, profile
 		// workflow tests via WaitForStatus.
 		w := plugintest.NewMockResponseWriter()
 		filter := &api.JobFilter{Statuses: []string{api.StatusRunning}}
-		p.GetJobs(w, user, filter, nil)
+		p.GetJobs(context.Background(), w, user, filter, nil)
 		plugintest.AssertNoError(t, w)
 	})
 
@@ -383,7 +383,7 @@ func testGetJobsInvariants(t *testing.T, p launcher.Plugin, user string, profile
 func testClusterInfoInvariants(t *testing.T, p launcher.Plugin, user string) {
 	t.Run("ReturnsWithoutError", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.ClusterInfo(w, user)
+		p.ClusterInfo(context.Background(), w, user)
 		plugintest.AssertNoError(t, w)
 		if w.ClusterInfo == nil {
 			t.Error("ClusterInfo must write cluster info")
@@ -392,7 +392,7 @@ func testClusterInfoInvariants(t *testing.T, p launcher.Plugin, user string) {
 
 	t.Run("LimitsHaveType", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.ClusterInfo(w, user)
+		p.ClusterInfo(context.Background(), w, user)
 		if w.ClusterInfo == nil {
 			t.Skip("ClusterInfo not available")
 		}
@@ -450,13 +450,13 @@ func testLifecycleInvariants(t *testing.T, p launcher.Plugin, user string, profi
 func testErrorInvariants(t *testing.T, p launcher.Plugin, user string, _ *Profile) {
 	t.Run("NotFoundUsesCodeJobNotFound", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.GetJob(w, user, "nonexistent-conformance-err-99999", nil)
+		p.GetJob(context.Background(), w, user, "nonexistent-conformance-err-99999", nil)
 		plugintest.AssertErrorCode(t, w, api.CodeJobNotFound)
 	})
 
 	t.Run("ControlNonexistentReturnsError", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.ControlJob(w, user, "nonexistent-conformance-ctrl-99999", api.OperationStop)
+		p.ControlJob(context.Background(), w, user, "nonexistent-conformance-ctrl-99999", api.OperationStop)
 		plugintest.AssertError(t, w)
 	})
 }

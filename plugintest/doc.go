@@ -17,7 +17,7 @@
 //			WithCommand("echo hello").
 //			Build()
 //
-//		plugin.SubmitJob(w, "testuser", job)
+//		plugin.SubmitJob(context.Background(), w, "testuser", job)
 //
 //		plugintest.AssertNoError(t, w)
 //		plugintest.AssertJobCount(t, w, 1)
@@ -71,7 +71,7 @@
 //		w := plugintest.NewMockResponseWriter()
 //
 //		// Act: call the plugin method
-//		plugin.GetJob(w, "alice", "test-1", nil)
+//		plugin.GetJob(context.Background(), w, "alice", "test-1", nil)
 //
 //		// Assert: verify the response
 //		plugintest.AssertNoError(t, w)
