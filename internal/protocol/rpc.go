@@ -20,7 +20,9 @@ type Request interface {
 	Type() int
 }
 
-func requestFromJSON(buf []byte) (Request, error) {
+// RequestFromJSON parses a JSON-encoded request message into the appropriate
+// concrete request type.
+func RequestFromJSON(buf []byte) (Request, error) {
 	var base BaseRequest
 	if err := json.Unmarshal(buf, &base); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMsgInvalid, err) //nolint:errorlint // intentionally wrapping only the sentinel error
@@ -75,6 +77,8 @@ func requestForType(rt requestType) (interface{}, error) {
 		return &MultiClusterInfoRequest{}, nil
 	case requestSetLoadBalancerNodes:
 		return &SetLoadBalancerNodesRequest{}, nil
+	case requestConfigReload:
+		return &ConfigReloadRequest{}, nil
 	default:
 		return nil, fmt.Errorf("%w: %d", ErrUnknownRequestType, rt)
 	}
@@ -95,6 +99,7 @@ const (
 	requestClusterInfo
 	requestMultiClusterInfo     requestType = 17
 	requestSetLoadBalancerNodes requestType = 201
+	requestConfigReload         requestType = 202
 )
 
 // BaseRequest contains base fields shared by all request types.
@@ -207,6 +212,11 @@ type MultiClusterInfoRequest struct {
 	BaseUserRequest
 }
 
+// ConfigReloadRequest is the config reload request.
+type ConfigReloadRequest struct {
+	BaseUserRequest
+}
+
 type responseType int
 
 const (
@@ -222,6 +232,7 @@ const (
 	responseClusterInfo
 	responseMultiClusterInfo     responseType = 17
 	responseSetLoadBalancerNodes responseType = 201
+	responseConfigReload         responseType = 202
 )
 
 type responseBase struct {
@@ -439,4 +450,17 @@ func NewSetLoadBalancerNodesResponse(requestID, responseID uint64) *SetLoadBalan
 	return &SetLoadBalancerNodesResponse{
 		responseSetLoadBalancerNodes, requestID, responseID,
 	}
+}
+
+// ConfigReloadResponse is the config reload response.
+type ConfigReloadResponse struct {
+	responseBase
+	ErrorType    api.ConfigReloadErrorType `json:"errorType"`
+	ErrorMessage string                    `json:"errorMessage"`
+}
+
+// NewConfigReloadResponse creates a new config reload response.
+func NewConfigReloadResponse(requestID, responseID uint64, errorType api.ConfigReloadErrorType, errorMessage string) *ConfigReloadResponse {
+	base := responseBase{responseConfigReload, requestID, responseID}
+	return &ConfigReloadResponse{responseBase: base, ErrorType: errorType, ErrorMessage: errorMessage}
 }

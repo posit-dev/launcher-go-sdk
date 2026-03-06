@@ -104,7 +104,7 @@ func (d *Decoder) Request() Request {
 	if d.err != nil {
 		return nil
 	}
-	req, err := requestFromJSON(d.buf[:d.msgLen])
+	req, err := RequestFromJSON(d.buf[:d.msgLen])
 	if err != nil {
 		d.err = err
 	}

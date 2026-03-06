@@ -509,7 +509,7 @@ Container image configuration.
 
 Import path: `github.com/posit-dev/launcher-go-sdk/api`
 
-The api package contains all type definitions matching the Launcher Plugin API v3.5.
+The api package contains all type definitions matching the Launcher Plugin API v3.6.
 
 ### Type: Job
 

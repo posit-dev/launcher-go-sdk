@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Go SDK for building Launcher plugins that integrate job schedulers (Slurm, Kubernetes, PBS, cloud platforms, etc.) with Posit Workbench and Posit Connect. Implements Launcher Plugin API v3.5.0.
+Go SDK for building Launcher plugins that integrate job schedulers (Slurm, Kubernetes, PBS, cloud platforms, etc.) with Posit Workbench and Posit Connect. Implements Launcher Plugin API v3.6.0.
 
 **Language:** Go 1.24+
 **License:** MIT

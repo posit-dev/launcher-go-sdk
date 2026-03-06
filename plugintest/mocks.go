@@ -30,6 +30,9 @@ type MockResponseWriter struct {
 
 	// Clusters contains all clusters written via WriteClusters (for multicluster).
 	Clusters []launcher.ClusterOptions
+
+	// ConfigReloadResults contains all config reload responses written via WriteConfigReload.
+	ConfigReloadResults []ConfigReloadResult
 }
 
 // ControlResult represents a control job operation result.
@@ -47,11 +50,12 @@ type NetworkInfo struct {
 // NewMockResponseWriter creates a new MockResponseWriter.
 func NewMockResponseWriter() *MockResponseWriter {
 	return &MockResponseWriter{
-		Errors:         []*api.Error{},
-		Jobs:           [][]*api.Job{},
-		ControlResults: []ControlResult{},
-		Networks:       []NetworkInfo{},
-		Clusters:       []launcher.ClusterOptions{},
+		Errors:              []*api.Error{},
+		Jobs:                [][]*api.Job{},
+		ControlResults:      []ControlResult{},
+		Networks:            []NetworkInfo{},
+		Clusters:            []launcher.ClusterOptions{},
+		ConfigReloadResults: []ConfigReloadResult{},
 	}
 }
 
@@ -122,6 +126,23 @@ func (m *MockResponseWriter) WriteClusters(clusters []launcher.ClusterOptions) e
 	return nil
 }
 
+// ConfigReloadResult represents a config reload operation result.
+type ConfigReloadResult struct {
+	ErrorType    api.ConfigReloadErrorType
+	ErrorMessage string
+}
+
+// WriteConfigReload captures config reload responses for test assertions.
+func (m *MockResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ConfigReloadResults = append(m.ConfigReloadResults, ConfigReloadResult{
+		ErrorType:    errorType,
+		ErrorMessage: errorMessage,
+	})
+	return nil
+}
+
 // HasError returns true if any errors were written.
 func (m *MockResponseWriter) HasError() bool {
 	m.mu.Lock()
@@ -180,6 +201,7 @@ func (m *MockResponseWriter) Reset() {
 	m.Networks = []NetworkInfo{}
 	m.ClusterInfo = nil
 	m.Clusters = []launcher.ClusterOptions{}
+	m.ConfigReloadResults = []ConfigReloadResult{}
 }
 
 // MockStreamResponseWriter is a mock implementation of launcher.StreamResponseWriter

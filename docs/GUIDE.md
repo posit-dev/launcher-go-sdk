@@ -977,6 +977,74 @@ func (p *MyPlugin) SyncNodes(nodes []api.Node) {
 }
 ```
 
+### Configuration reloading
+
+The Launcher can ask plugins to reload their configuration at runtime without restarting (API v3.6.0+). At minimum, plugins should reload user profiles and resource profiles. Reloading additional configuration is permitted but not required.
+
+Implement `ConfigReloadablePlugin` to support this:
+
+```go
+func (p *MyPlugin) ReloadConfig(ctx context.Context) error {
+    profiles, err := loadProfiles(p.profilePath)
+    if err != nil {
+        return &launcher.ConfigReloadError{
+            Type:    api.ReloadErrorLoad,
+            Message: fmt.Sprintf("failed to load profiles: %v", err),
+        }
+    }
+    if err := profiles.Validate(); err != nil {
+        return &launcher.ConfigReloadError{
+            Type:    api.ReloadErrorValidate,
+            Message: fmt.Sprintf("invalid profiles: %v", err),
+        }
+    }
+    p.mu.Lock()
+    p.profiles = profiles
+    p.mu.Unlock()
+    return nil
+}
+```
+
+Plugins that do not implement this interface automatically send a success response. Error types help the Launcher classify failures: `ReloadErrorLoad` for file read errors, `ReloadErrorValidate` for invalid configuration, and `ReloadErrorSave` for errors persisting state. Returning a plain `error` (instead of `*ConfigReloadError`) defaults to `ReloadErrorUnknown`.
+
+**Best practice: preserve last-known-good configuration.** When reloading file-based configuration, only replace your in-memory state after the new files have been successfully loaded and validated. This ensures that a malformed config file doesn't leave the plugin in a broken state — the previous working configuration stays active. The first-party plugins take this further by writing hidden backup copies of each profile file (e.g., `.launcher.local.profiles.conf.active`) at two points: once at startup after the initial successful load, and again after every successful reload. The startup copy seeds the backup so it exists before any reload is attempted. If your plugin uses file-based profiles, consider adopting the same pattern:
+
+```go
+func (p *MyPlugin) Bootstrap(ctx context.Context) error {
+    // ... load jobs from scheduler, etc.
+
+    // Seed last-known-good copies from the config we just booted with.
+    writeBackupCopy(p.profilePath)
+    return nil
+}
+
+func (p *MyPlugin) ReloadConfig(ctx context.Context) error {
+    // Load and validate BEFORE replacing anything.
+    newProfiles, err := loadProfiles(p.profilePath)
+    if err != nil {
+        return &launcher.ConfigReloadError{
+            Type:    api.ReloadErrorLoad,
+            Message: fmt.Sprintf("failed to load profiles: %v", err),
+        }
+    }
+    if err := newProfiles.Validate(); err != nil {
+        return &launcher.ConfigReloadError{
+            Type:    api.ReloadErrorValidate,
+            Message: fmt.Sprintf("invalid profiles: %v", err),
+        }
+    }
+
+    // Swap in the validated config.
+    p.mu.Lock()
+    p.profiles = newProfiles
+    p.mu.Unlock()
+
+    // Update the backup with the new known-good config.
+    writeBackupCopy(p.profilePath)
+    return nil
+}
+```
+
 ### User profiles
 
 System administrators may want to set default or maximum values for certain features on a per-user or per-group basis. For example, different groups of users could have different memory limits or CPU counts.

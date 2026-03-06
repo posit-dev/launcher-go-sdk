@@ -173,6 +173,30 @@ func TestErrCode_String(t *testing.T) {
 	}
 }
 
+func TestConfigReloadErrorType_String(t *testing.T) {
+	tests := []struct {
+		name string
+		code ConfigReloadErrorType
+		want string
+	}{
+		{"unknown", ReloadErrorUnknown, "unknown error"},
+		{"none", ReloadErrorNone, "none"},
+		{"load", ReloadErrorLoad, "load error"},
+		{"validate", ReloadErrorValidate, "validation error"},
+		{"save", ReloadErrorSave, "save error"},
+		{"invalid value", ConfigReloadErrorType(99), "unknown error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.code.String()
+			if got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestJobID(t *testing.T) {
 	// Test that JobID is a distinct type
 	var id JobID = "test-123"
