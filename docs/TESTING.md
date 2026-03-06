@@ -158,7 +158,7 @@ Captures all responses for assertions:
 import "github.com/posit-dev/launcher-go-sdk/plugintest"
 
 w := plugintest.NewMockResponseWriter()
-plugin.SubmitJob(w, "alice", job)
+plugin.SubmitJob(context.Background(), w, "alice", job)
 
 // Check for errors
 if w.HasError() {
@@ -250,7 +250,7 @@ func TestSubmitJob(t *testing.T) {
 
     // Execute
     w := plugintest.NewMockResponseWriter()
-    plugin.SubmitJob(w, "alice", job)
+    plugin.SubmitJob(context.Background(), w, "alice", job)
 
     // Assert
     plugintest.AssertNoError(t, w)
@@ -285,7 +285,7 @@ func TestGetJob(t *testing.T) {
 
     // Execute
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w, "alice", "job-123", nil)
+    plugin.GetJob(context.Background(), w, "alice", "job-123", nil)
 
     // Assert
     plugintest.AssertNoError(t, w)
@@ -310,7 +310,7 @@ func TestGetJob_NotFound(t *testing.T) {
 
     // Execute (job doesn't exist)
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w, "alice", "nonexistent", nil)
+    plugin.GetJob(context.Background(), w, "alice", "nonexistent", nil)
 
     // Assert error
     plugintest.AssertErrorCode(t, w, api.CodeJobNotFound)
@@ -343,7 +343,7 @@ func TestGetJobs_FilterByStatus(t *testing.T) {
         Build()
 
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJobs(w, "alice", filter, nil)
+    plugin.GetJobs(context.Background(), w, "alice", filter, nil)
 
     // Assert
     plugintest.AssertNoError(t, w)
@@ -374,14 +374,14 @@ func TestControlJob_Kill(t *testing.T) {
 
     // Execute kill operation
     w := plugintest.NewMockResponseWriter()
-    plugin.ControlJob(w, "alice", "job-123", api.OperationKill)
+    plugin.ControlJob(context.Background(), w, "alice", "job-123", api.OperationKill)
 
     // Assert operation succeeded
     plugintest.AssertNoError(t, w)
 
     // Verify job status changed
     w2 := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w2, "alice", "job-123", nil)
+    plugin.GetJob(context.Background(), w2, "alice", "job-123", nil)
 
     updatedJob := w2.LastJobs()[0]
     plugintest.AssertJobStatus(t, updatedJob, api.StatusKilled)
@@ -408,7 +408,7 @@ func TestControlJob_InvalidState(t *testing.T) {
 
     // Try to kill a finished job (invalid)
     w := plugintest.NewMockResponseWriter()
-    plugin.ControlJob(w, "alice", "job-123", api.OperationKill)
+    plugin.ControlJob(context.Background(), w, "alice", "job-123", api.OperationKill)
 
     // Assert error
     plugintest.AssertErrorCode(t, w, api.CodeInvalidJobState)
@@ -521,7 +521,7 @@ func TestClusterInfo(t *testing.T) {
 
     // Execute
     w := plugintest.NewMockResponseWriter()
-    plugin.ClusterInfo(w, "alice")
+    plugin.ClusterInfo(context.Background(), w, "alice")
 
     // Assert
     plugintest.AssertNoError(t, w)
@@ -575,7 +575,7 @@ func TestSubmitJob_RealSlurm(t *testing.T) {
         Build()
 
     w := plugintest.NewMockResponseWriter()
-    plugin.SubmitJob(w, os.Getenv("USER"), job)
+    plugin.SubmitJob(context.Background(), w, os.Getenv("USER"), job)
 
     plugintest.AssertNoError(t, w)
 
@@ -590,7 +590,7 @@ func TestSubmitJob_RealSlurm(t *testing.T) {
         time.Sleep(5 * time.Second)
 
         w2 := plugintest.NewMockResponseWriter()
-        plugin.GetJob(w2, os.Getenv("USER"), api.JobID(jobID), nil)
+        plugin.GetJob(context.Background(), w2, os.Getenv("USER"), jobID, nil)
 
         if w2.HasError() {
             t.Fatalf("Error getting job: %v", w2.LastError())
@@ -664,7 +664,7 @@ func TestControlJob_Operations(t *testing.T) {
 
             // Execute
             w := plugintest.NewMockResponseWriter()
-            plugin.ControlJob(w, "alice", "job-123", tt.operation)
+            plugin.ControlJob(context.Background(), w, "alice", "job-123", tt.operation)
 
             // Assert
             if tt.expectError {
@@ -674,7 +674,7 @@ func TestControlJob_Operations(t *testing.T) {
 
                 // Verify status changed
                 w2 := plugintest.NewMockResponseWriter()
-                plugin.GetJob(w2, "alice", "job-123", nil)
+                plugin.GetJob(context.Background(), w2, "alice", "job-123", nil)
                 updatedJob := w2.LastJobs()[0]
                 plugintest.AssertJobStatus(t, updatedJob, tt.expectedStatus)
             }
@@ -710,7 +710,7 @@ func submitTestJob(t *testing.T, plugin *MyPlugin, user string) string {
         Build()
 
     w := plugintest.NewMockResponseWriter()
-    plugin.SubmitJob(w, user, job)
+    plugin.SubmitJob(context.Background(), w, user, job)
 
     plugintest.AssertNoError(t, w)
     return w.LastJobs()[0].ID
@@ -739,7 +739,7 @@ func TestSubmitJob(t *testing.T) {
             Build()
 
         w := plugintest.NewMockResponseWriter()
-        plugin.SubmitJob(w, "alice", job)
+        plugin.SubmitJob(context.Background(), w, "alice", job)
 
         plugintest.AssertNoError(t, w)
     })
@@ -751,7 +751,7 @@ func TestSubmitJob(t *testing.T) {
             Build()
 
         w := plugintest.NewMockResponseWriter()
-        plugin.SubmitJob(w, "alice", job)
+        plugin.SubmitJob(context.Background(), w, "alice", job)
 
         jobID := w.LastJobs()[0].ID
         if jobID == "" {
@@ -766,7 +766,7 @@ func TestSubmitJob(t *testing.T) {
             Build()
 
         w := plugintest.NewMockResponseWriter()
-        plugin.SubmitJob(w, "alice", job)
+        plugin.SubmitJob(context.Background(), w, "alice", job)
 
         returnedJob := w.LastJobs()[0]
         plugintest.AssertJobStatus(t, returnedJob, api.StatusPending)
@@ -864,7 +864,7 @@ func TestGetJob_NotFound(t *testing.T) {
     plugin, _ := testPlugin(t)
 
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w, "alice", "nonexistent", nil)
+    plugin.GetJob(context.Background(), w, "alice", "nonexistent", nil)
 
     plugintest.AssertErrorCode(t, w, api.CodeJobNotFound)
 }
@@ -900,11 +900,11 @@ time.Sleep(10 * time.Second)
 ### 5. Use t.Helper()
 
 ```go
-func assertJobExists(t *testing.T, plugin *MyPlugin, jobID string) {
+func assertJobExists(t *testing.T, plugin *MyPlugin, jobID api.JobID) {
     t.Helper() // Makes failures report correct line numbers
 
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w, "alice", api.JobID(jobID), nil)
+    plugin.GetJob(context.Background(), w, "alice", jobID, nil)
 
     if w.HasError() {
         t.Fatalf("Job %s not found", jobID)
@@ -950,7 +950,7 @@ func TestGetJob_WrongUser(t *testing.T) {
 
     // Bob tries to get Alice's job
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJob(w, "bob", "job-123", nil)
+    plugin.GetJob(context.Background(), w, "bob", "job-123", nil)
 
     // Should get permission denied error
     plugintest.AssertErrorCode(t, w, api.CodeJobNotFound)
@@ -977,7 +977,7 @@ func TestConcurrentJobSubmission(t *testing.T) {
                 Build()
 
             w := plugintest.NewMockResponseWriter()
-            plugin.SubmitJob(w, "alice", job)
+            plugin.SubmitJob(context.Background(), w, "alice", job)
 
             plugintest.AssertNoError(t, w)
         }(i)
@@ -987,7 +987,7 @@ func TestConcurrentJobSubmission(t *testing.T) {
 
     // Verify all jobs were created
     w := plugintest.NewMockResponseWriter()
-    plugin.GetJobs(w, "alice", nil, nil)
+    plugin.GetJobs(context.Background(), w, "alice", nil, nil)
 
     plugintest.AssertJobCount(t, w, numJobs)
 

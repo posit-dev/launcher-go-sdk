@@ -56,8 +56,8 @@ type MyPlugin struct {
     nextID int32
 }
 
-func (p *MyPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Job) {
-    job.ID = fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1))
+func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
+    job.ID = api.JobID(fmt.Sprintf("job-%d", atomic.AddInt32(&p.nextID, 1)))
     job.Status = api.StatusPending
     if err := p.cache.AddOrUpdate(job); err != nil {
         w.WriteError(err)
@@ -66,8 +66,8 @@ func (p *MyPlugin) SubmitJob(w launcher.ResponseWriter, user string, job *api.Jo
     p.cache.WriteJob(w, user, job.ID)
 }
 
-func (p *MyPlugin) GetJob(w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
-    p.cache.WriteJob(w, user, string(id))
+func (p *MyPlugin) GetJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, fields []string) {
+    p.cache.WriteJob(w, user, id)
 }
 
 // ... implement other Plugin methods ...
@@ -111,16 +111,16 @@ All plugins implement the `launcher.Plugin` interface:
 
 ```go
 type Plugin interface {
-    SubmitJob(w ResponseWriter, user string, job *api.Job)
-    GetJob(w ResponseWriter, user string, id api.JobID, fields []string)
-    GetJobs(w ResponseWriter, user string, filter *api.JobFilter, fields []string)
-    ControlJob(w ResponseWriter, user string, id api.JobID, op api.JobOperation)
+    SubmitJob(ctx context.Context, w ResponseWriter, user string, job *api.Job)
+    GetJob(ctx context.Context, w ResponseWriter, user string, id api.JobID, fields []string)
+    GetJobs(ctx context.Context, w ResponseWriter, user string, filter *api.JobFilter, fields []string)
+    ControlJob(ctx context.Context, w ResponseWriter, user string, id api.JobID, op api.JobOperation)
     GetJobStatus(ctx context.Context, w StreamResponseWriter, user string, id api.JobID)
     GetJobStatuses(ctx context.Context, w StreamResponseWriter, user string)
     GetJobOutput(ctx context.Context, w StreamResponseWriter, user string, id api.JobID, outputType api.JobOutput)
     GetJobResourceUtil(ctx context.Context, w StreamResponseWriter, user string, id api.JobID)
-    GetJobNetwork(w ResponseWriter, user string, id api.JobID)
-    ClusterInfo(w ResponseWriter, user string)
+    GetJobNetwork(ctx context.Context, w ResponseWriter, user string, id api.JobID)
+    ClusterInfo(ctx context.Context, w ResponseWriter, user string)
 }
 ```
 
@@ -147,7 +147,12 @@ cache.StreamJobStatus(ctx, w, user, jobID)
 Write tests using the provided mocks and builders:
 
 ```go
-import "github.com/posit-dev/launcher-go-sdk/plugintest"
+import (
+    "context"
+    "testing"
+
+    "github.com/posit-dev/launcher-go-sdk/plugintest"
+)
 
 func TestSubmitJob(t *testing.T) {
     w := plugintest.NewMockResponseWriter()
@@ -158,7 +163,7 @@ func TestSubmitJob(t *testing.T) {
         WithCommand("echo hello").
         Build()
 
-    plugin.SubmitJob(w, "alice", job)
+    plugin.SubmitJob(context.Background(), w, "alice", job)
 
     plugintest.AssertNoError(t, w)
     plugintest.AssertJobCount(t, w, 1)
@@ -189,7 +194,7 @@ Once we release v1.0.0, we will strictly maintain backwards compatibility within
 
 ## Requirements
 
-- Go 1.25 or later
+- Go 1.24 or later
 - Linux, macOS (we test on Linux and macOS)
 - Workbench 2023.09.0 or later or Connect 2024.08.0 or later (for deployment)
 

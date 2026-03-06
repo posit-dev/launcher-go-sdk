@@ -122,7 +122,7 @@ func (s *inMemoryStore) JobsForUser(user string, filter *api.JobFilter, fn func(
 	s.RLock()
 	defer s.RUnlock()
 	out := []*api.Job{}
-	ids := []string{}
+	ids := []api.JobID{}
 	for _, job := range s.jobs {
 		if user != "*" && job.User != user {
 			continue
@@ -133,9 +133,9 @@ func (s *inMemoryStore) JobsForUser(user string, filter *api.JobFilter, fn func(
 		ids = append(ids, job.ID)
 	}
 	// Deterministic output order.
-	sort.Strings(ids)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
-		snapshot := *s.jobs[id]
+		snapshot := *s.jobs[string(id)]
 		if filter == nil {
 			out = append(out, &snapshot)
 		} else {

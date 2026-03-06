@@ -26,14 +26,14 @@ func NewJob() *JobBuilder {
 }
 
 // NewJobWithID creates a new JobBuilder with the specified ID.
-func NewJobWithID(id string) *JobBuilder {
+func NewJobWithID(id api.JobID) *JobBuilder {
 	b := NewJob()
 	b.job.ID = id
 	return b
 }
 
 // WithID sets the job ID.
-func (b *JobBuilder) WithID(id string) *JobBuilder {
+func (b *JobBuilder) WithID(id api.JobID) *JobBuilder {
 	b.job.ID = id
 	return b
 }

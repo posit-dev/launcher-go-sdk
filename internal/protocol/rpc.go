@@ -37,7 +37,9 @@ func requestFromJSON(buf []byte) (Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal(buf, req) //nolint:errcheck // We know this can be unmarshalled.
+	if err := json.Unmarshal(buf, req); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrMsgInvalid, err) //nolint:errorlint // intentionally wrapping only the sentinel error
+	}
 	r, ok := req.(Request)
 	if !ok {
 		panic("requestForType returned a non-Request type")

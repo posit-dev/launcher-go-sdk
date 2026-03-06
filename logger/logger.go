@@ -41,6 +41,7 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 	fname = name + "-debug.log"
 	debugFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
+		logFile.Close() //nolint:errcheck // best-effort cleanup on error path
 		return nil, err
 	}
 	sink := io.MultiWriter(os.Stderr, logFile, debugFile)

@@ -298,7 +298,7 @@ func ExampleJobBuilder() {
     job := plugintest.NewJob().
         WithUser("alice").
         WithCommand("python train.py").
-        WithMemory("8GB").
+        WithLimit("memory", "8GB").
         Build()
 
     fmt.Println(job.User)

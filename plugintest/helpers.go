@@ -82,7 +82,7 @@ func AssertJobStatus(t *testing.T, job *api.Job, expected string) {
 }
 
 // AssertJobID asserts that a job has the expected ID.
-func AssertJobID(t *testing.T, job *api.Job, expected string) {
+func AssertJobID(t *testing.T, job *api.Job, expected api.JobID) {
 	t.Helper()
 	if job == nil {
 		t.Error("job is nil")
@@ -257,7 +257,7 @@ func AssertJobDoesNotMatchFilter(t *testing.T, job *api.Job, filter *api.JobFilt
 }
 
 // FindJobByID finds a job by ID in a list of jobs.
-func FindJobByID(jobs []*api.Job, id string) *api.Job {
+func FindJobByID(jobs []*api.Job, id api.JobID) *api.Job {
 	for _, job := range jobs {
 		if job.ID == id {
 			return job
