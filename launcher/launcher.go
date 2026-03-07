@@ -727,7 +727,7 @@ func (s *streamStore) Start(requestID uint64) context.Context {
 		return rec.Context
 	}
 	rec = &streamRecord{}
-	rec.Context, rec.Cancel = context.WithCancel(s.ctx)
+	rec.Context, rec.Cancel = context.WithCancel(s.ctx) //nolint:gosec // G118: cancel is stored and called in Cancel()
 	s.streams[requestID] = rec
 	return rec.Context
 }
