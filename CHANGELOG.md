@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Plugin API 3.6.0**: Config reload support. The Launcher can now request plugins to reload configuration at runtime without restarting.
+  - `ConfigReloadablePlugin` optional interface in `launcher` package — plugins implement `ReloadConfig(ctx context.Context) error` to handle reload requests
+  - `ConfigReloadError` type for classified reload failures (Load, Validate, Save)
+  - `ConfigReloadErrorType` enum in `api` package with `String()` method
+  - Plugins that do not implement `ConfigReloadablePlugin` automatically send a success response
+  - `MockResponseWriter.WriteConfigReload` and `ConfigReloadResult` in `plugintest` for testing reload implementations
+- Protocol support for config reload request/response (message type 202) in `internal/protocol`
+- Exported `protocol.RequestFromJSON` for use in handler tests
+- Unit tests for `internal/protocol` and `launcher` packages
+
 ### Changed
 - **BREAKING**: `cache.NewJobCache` no longer accepts a `dir` parameter. The SDK now defaults to in-memory caching, which aligns with how Launcher plugins are expected to work: the scheduler owns job state, and plugins populate the cache during `Bootstrap()` and keep it in sync via periodic polling.
 - **BREAKING**: Add `context.Context` as the first parameter to all non-streaming `Plugin` methods (`SubmitJob`, `GetJob`, `GetJobs`, `ControlJob`, `GetJobNetwork`, `ClusterInfo`) and extension interfaces (`Bootstrap`, `GetClusters`). Streaming methods already accepted context.

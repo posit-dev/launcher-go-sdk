@@ -835,7 +835,41 @@ type Version struct {
 
 // APIVersion is the Launcher plugin API version supported by the types defined
 // in this package.
-var APIVersion = Version{Major: 3, Minor: 5, Patch: 0}
+var APIVersion = Version{Major: 3, Minor: 6, Patch: 0}
+
+// ConfigReloadErrorType classifies config reload errors.
+type ConfigReloadErrorType int
+
+const (
+	// ReloadErrorUnknown indicates an unclassified reload error.
+	ReloadErrorUnknown ConfigReloadErrorType = -1
+	// ReloadErrorNone indicates the reload succeeded.
+	ReloadErrorNone ConfigReloadErrorType = 0
+	// ReloadErrorLoad indicates an error loading configuration files.
+	ReloadErrorLoad ConfigReloadErrorType = 1
+	// ReloadErrorValidate indicates a validation error in the configuration.
+	ReloadErrorValidate ConfigReloadErrorType = 2
+	// ReloadErrorSave indicates an error saving configuration state.
+	ReloadErrorSave ConfigReloadErrorType = 3
+)
+
+// String returns a human-readable description of the error type.
+func (e ConfigReloadErrorType) String() string {
+	switch e {
+	case ReloadErrorUnknown:
+		return "unknown error"
+	case ReloadErrorNone:
+		return "none"
+	case ReloadErrorLoad:
+		return "load error"
+	case ReloadErrorValidate:
+		return "validation error"
+	case ReloadErrorSave:
+		return "save error"
+	default:
+		return "unknown error"
+	}
+}
 
 // Parsing errors.
 var (

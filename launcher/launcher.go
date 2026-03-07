@@ -222,6 +222,42 @@ type LoadBalancedPlugin interface {
 	SyncNodes(nodes []api.Node)
 }
 
+// ConfigReloadablePlugin can be implemented by plugins that support runtime
+// configuration reloading. When the Launcher sends a config reload request,
+// ReloadConfig will be called and the SDK writes the response automatically
+// based on the returned error. Plugins that do not implement this interface
+// will send an empty success response automatically.
+//
+// At minimum, plugins should reload user profiles and resource profiles.
+// Reloading additional configuration (e.g., the main plugin configuration
+// file) is permitted but not required.
+type ConfigReloadablePlugin interface {
+	Plugin
+
+	// ReloadConfig is called when the Launcher requests a configuration
+	// reload. Return nil on success. Return a [*ConfigReloadError] to
+	// provide a classified error type, or any other error for an
+	// unclassified failure.
+	ReloadConfig(ctx context.Context) error
+}
+
+// ConfigReloadError represents a configuration reload failure with a
+// classified error type. Plugins should return this from
+// [ConfigReloadablePlugin.ReloadConfig] to provide both an error type and
+// message. If a plain error is returned, the error type defaults to
+// [api.ReloadErrorUnknown].
+type ConfigReloadError struct {
+	Type    api.ConfigReloadErrorType
+	Message string
+}
+
+func (e *ConfigReloadError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("config reload failed: %s", e.Type)
+}
+
 // ResponseWriter is the interface for writing responses back to the Launcher.
 // Methods return error to allow implementations flexibility in error reporting
 // (e.g., mock writers can simulate failures). Most plugin code treats writes as
@@ -457,6 +493,27 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			}
 			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteSetLoadBalancerNodes()
+		case *protocol.ConfigReloadRequest:
+			w = newResponseWriter(req, ch)
+			crPlugin, ok := p.(ConfigReloadablePlugin)
+			if !ok {
+				//nolint:errcheck // sendResponse currently always returns nil
+				w.WriteConfigReload(api.ReloadErrorNone, "")
+				return
+			}
+			if err := crPlugin.ReloadConfig(ctx); err != nil {
+				var crErr *ConfigReloadError
+				if errors.As(err, &crErr) {
+					//nolint:errcheck // sendResponse currently always returns nil
+					w.WriteConfigReload(crErr.Type, crErr.Message)
+				} else {
+					//nolint:errcheck // sendResponse currently always returns nil
+					w.WriteConfigReload(api.ReloadErrorUnknown, err.Error())
+				}
+				return
+			}
+			//nolint:errcheck // sendResponse currently always returns nil
+			w.WriteConfigReload(api.ReloadErrorNone, "")
 		default:
 			w = newResponseWriter(req, ch)
 			//nolint:errcheck // sendResponse currently always returns nil
@@ -631,6 +688,11 @@ func (w *defaultResponseWriter) WriteBootstrap() error {
 
 func (w *defaultResponseWriter) WriteSetLoadBalancerNodes() error {
 	resp := protocol.NewSetLoadBalancerNodesResponse(w.req.ID(), nextResponseID())
+	return w.sendResponse(resp)
+}
+
+func (w *defaultResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error {
+	resp := protocol.NewConfigReloadResponse(w.req.ID(), nextResponseID(), errorType, errorMessage)
 	return w.sendResponse(resp)
 }
 

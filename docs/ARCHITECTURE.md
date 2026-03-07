@@ -98,7 +98,7 @@ type DefaultOptions struct { /* ... */ }
 
 #### `api` - Type Definitions
 
-Contains all types matching the Launcher Plugin API v3.5:
+Contains all types matching the Launcher Plugin API v3.6:
 
 ```go
 type Job struct { /* 30+ fields */ }
