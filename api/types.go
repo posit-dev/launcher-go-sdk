@@ -835,7 +835,7 @@ type Version struct {
 
 // APIVersion is the Launcher plugin API version supported by the types defined
 // in this package.
-var APIVersion = Version{Major: 3, Minor: 6, Patch: 0}
+var APIVersion = Version{Major: 3, Minor: 7, Patch: 0}
 
 // ConfigReloadErrorType classifies config reload errors.
 type ConfigReloadErrorType int

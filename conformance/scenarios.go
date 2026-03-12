@@ -638,6 +638,56 @@ func RunControlInvalidState(t *testing.T, p launcher.Plugin, user string, opts I
 	}
 }
 
+// MetricsOpts configures the [RunMetrics] scenario.
+type MetricsOpts struct {
+	// Timeout for the Metrics call. Default: 1s.
+	Timeout time.Duration
+}
+
+// RunMetrics verifies that a [launcher.MetricsPlugin] implementation returns
+// promptly and produces valid metrics data.
+func RunMetrics(t *testing.T, p launcher.Plugin, opts MetricsOpts) {
+	t.Helper()
+	timeout := defaultTimeout(opts.Timeout, time.Second)
+
+	mp, ok := p.(launcher.MetricsPlugin)
+	if !ok {
+		t.Skip("plugin does not implement MetricsPlugin")
+	}
+
+	t.Run("ReturnsWithinTimeout", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		done := make(chan launcher.PluginMetrics, 1)
+		go func() {
+			done <- mp.Metrics(ctx)
+		}()
+
+		select {
+		case <-done:
+			// Good — Metrics returned promptly.
+		case <-ctx.Done():
+			t.Fatal("Metrics() did not return within timeout")
+		}
+	})
+
+	t.Run("LatencyBucketsNonNegative", func(t *testing.T) {
+		metrics := mp.Metrics(context.Background())
+		if metrics.ClusterInteractionLatency == nil {
+			t.Skip("no cluster interaction latency reported")
+		}
+		for i, v := range metrics.ClusterInteractionLatency.Buckets {
+			if v < 0 {
+				t.Errorf("bucket[%d] = %v, want >= 0", i, v)
+			}
+		}
+		if metrics.ClusterInteractionLatency.Sum < 0 {
+			t.Errorf("sum = %v, want >= 0", metrics.ClusterInteractionLatency.Sum)
+		}
+	})
+}
+
 // assertExitCode checks that the job's exit code is in the list of
 // acceptable values.
 func assertExitCode(t *testing.T, job *api.Job, acceptable []int) {

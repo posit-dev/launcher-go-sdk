@@ -19,9 +19,10 @@ import (
 // testPlugin is a minimal in-memory plugin for testing the conformance suite
 // itself. It uses the cache package to handle storage and streaming.
 type testPlugin struct {
-	cache  *cache.JobCache
-	nextID int32
-	wg     sync.WaitGroup
+	cache   *cache.JobCache
+	nextID  int32
+	wg      sync.WaitGroup
+	latency *launcher.Histogram
 }
 
 func newTestPlugin(t *testing.T) *testPlugin {
@@ -31,7 +32,10 @@ func newTestPlugin(t *testing.T) *testPlugin {
 	if err != nil {
 		t.Fatalf("failed to create job cache: %v", err)
 	}
-	tp := &testPlugin{cache: c}
+	tp := &testPlugin{
+		cache:   c,
+		latency: launcher.NewHistogram(launcher.ClusterInteractionLatencyBuckets),
+	}
 	t.Cleanup(func() {
 		tp.wg.Wait()
 		_ = c.Close()
@@ -183,6 +187,12 @@ func (p *testPlugin) GetJobNetwork(_ context.Context, w launcher.ResponseWriter,
 	}
 }
 
+func (p *testPlugin) Metrics(_ context.Context) launcher.PluginMetrics {
+	return launcher.PluginMetrics{
+		ClusterInteractionLatency: p.latency.Drain(),
+	}
+}
+
 func (p *testPlugin) ClusterInfo(_ context.Context, w launcher.ResponseWriter, _ string) {
 	w.WriteClusterInfo(launcher.ClusterOptions{
 		Queues:       []string{"default"},
@@ -321,6 +331,13 @@ func TestRunFieldFiltering(t *testing.T) {
 			Command: "echo hello",
 		},
 		Fields: []string{"status", "name"},
+	})
+}
+
+func TestRunMetrics(t *testing.T) {
+	p := newTestPlugin(t)
+	conformance.RunMetrics(t, p, conformance.MetricsOpts{
+		Timeout: 2 * time.Second,
 	})
 }
 

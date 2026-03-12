@@ -61,6 +61,81 @@ func TestNewConfigReloadResponse_Success(t *testing.T) {
 	}
 }
 
+func TestNewMetricsResponse_Basic(t *testing.T) {
+	resp := NewMetricsResponse(3600, nil)
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if mt := int(got["messageType"].(float64)); mt != 203 {
+		t.Errorf("messageType = %d, want 203", mt)
+	}
+	if rid := uint64(got["requestId"].(float64)); rid != 0 {
+		t.Errorf("requestId = %d, want 0", rid)
+	}
+	if resID := uint64(got["responseId"].(float64)); resID != 0 {
+		t.Errorf("responseId = %d, want 0", resID)
+	}
+	if uptime := uint64(got["uptimeSeconds"].(float64)); uptime != 3600 {
+		t.Errorf("uptimeSeconds = %d, want 3600", uptime)
+	}
+	if _, ok := got["clusterInteractionLatencySample"]; ok {
+		t.Error("clusterInteractionLatencySample should be omitted when nil")
+	}
+}
+
+func TestNewMetricsResponse_WithLatency(t *testing.T) {
+	latency := &HistogramSample{
+		Buckets: []float64{0, 2, 3, 0, 0, 0, 0, 0, 0, 0},
+		Sum:     1.52,
+	}
+	resp := NewMetricsResponse(120, latency)
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if mt := int(got["messageType"].(float64)); mt != 203 {
+		t.Errorf("messageType = %d, want 203", mt)
+	}
+	if uptime := uint64(got["uptimeSeconds"].(float64)); uptime != 120 {
+		t.Errorf("uptimeSeconds = %d, want 120", uptime)
+	}
+
+	sample, ok := got["clusterInteractionLatencySample"].(map[string]interface{})
+	if !ok {
+		t.Fatal("clusterInteractionLatencySample missing or wrong type")
+	}
+
+	buckets, ok := sample["buckets"].([]interface{})
+	if !ok {
+		t.Fatal("buckets missing or wrong type")
+	}
+	if len(buckets) != 10 {
+		t.Errorf("len(buckets) = %d, want 10", len(buckets))
+	}
+	if buckets[1].(float64) != 2 {
+		t.Errorf("buckets[1] = %v, want 2", buckets[1])
+	}
+
+	if sum := sample["sum"].(float64); sum != 1.52 {
+		t.Errorf("sum = %v, want 1.52", sum)
+	}
+}
+
 func TestNewConfigReloadResponse_ErrorTypes(t *testing.T) {
 	tests := []struct {
 		name      string

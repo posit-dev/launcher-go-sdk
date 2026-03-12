@@ -233,6 +233,7 @@ const (
 	responseMultiClusterInfo     responseType = 17
 	responseSetLoadBalancerNodes responseType = 201
 	responseConfigReload         responseType = 202
+	responseMetrics              responseType = 203
 )
 
 type responseBase struct {
@@ -463,4 +464,35 @@ type ConfigReloadResponse struct {
 func NewConfigReloadResponse(requestID, responseID uint64, errorType api.ConfigReloadErrorType, errorMessage string) *ConfigReloadResponse {
 	base := responseBase{responseConfigReload, requestID, responseID}
 	return &ConfigReloadResponse{responseBase: base, ErrorType: errorType, ErrorMessage: errorMessage}
+}
+
+// HistogramSample is a portable snapshot of a Prometheus histogram's data,
+// containing non-cumulative per-bucket counts and the sum of observed values.
+// Unlike Prometheus's cumulative bucket format, each element in Buckets
+// represents only the count for that specific bucket range, matching the
+// format expected by the Launcher and the C++ SDK.
+type HistogramSample struct {
+	Buckets []float64 `json:"buckets"`
+	Sum     float64   `json:"sum"`
+}
+
+// MetricsResponse is a periodic metrics report sent by the plugin to the
+// Launcher. Unlike other responses, this is unsolicited — it is not sent in
+// response to any request. Both requestId and responseId are zero.
+type MetricsResponse struct {
+	responseBase
+	UptimeSeconds                   uint64           `json:"uptimeSeconds"`
+	ClusterInteractionLatencySample *HistogramSample `json:"clusterInteractionLatencySample,omitempty"`
+}
+
+// NewMetricsResponse creates a new metrics response. The requestId and
+// responseId are both zero because this message is not a response to a
+// request.
+func NewMetricsResponse(uptimeSeconds uint64, latency *HistogramSample) *MetricsResponse {
+	base := responseBase{responseMetrics, 0, 0}
+	return &MetricsResponse{
+		responseBase:                    base,
+		UptimeSeconds:                   uptimeSeconds,
+		ClusterInteractionLatencySample: latency,
+	}
 }

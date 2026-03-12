@@ -66,6 +66,34 @@ Every response from the plugin includes:
 | 7 | Get Job Resource Util | Stream resource utilization metrics for a job. |
 | 8 | Get Job Network | Get network information (hostname, IPs) for a job. |
 | 9 | Get Cluster Info | Get cluster capabilities and configuration. |
+| 17 | Multi Cluster Info | Get capabilities for multiple clusters. |
+| 201 | Set Load Balancer Nodes | Update load-balanced node list. |
+| 202 | Config Reload | Request configuration reload. |
+| 203 | Metrics Response | Periodic plugin metrics (plugin-initiated, no request). |
+
+### Metrics response (type 203)
+
+Unlike all other protocol messages, the plugin initiates the metrics response. The plugin sends it periodically on a timer (controlled by `--plugin-metrics-interval-seconds`) without any corresponding request from the Launcher. Both `requestId` and `responseId` are zero.
+
+```json
+{
+  "messageType": 203,
+  "requestId": 0,
+  "responseId": 0,
+  "uptimeSeconds": 3600,
+  "clusterInteractionLatencySample": {
+    "buckets": [0, 2, 3, 0, 0, 0, 0, 0, 0, 0],
+    "sum": 1.52
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `uptimeSeconds` | uint64 | Seconds since the plugin started. Always present. |
+| `clusterInteractionLatencySample` | object | Histogram snapshot of cluster interaction latency. Optional. |
+| `clusterInteractionLatencySample.buckets` | []float64 | Per-bucket observation counts (non-cumulative). |
+| `clusterInteractionLatencySample.sum` | float64 | Sum of all observed values. |
 
 ### Stream responses
 
@@ -239,6 +267,58 @@ Returns information about cluster capabilities (queues, resource limits, contain
 - `w` - ResponseWriter to send cluster info
 - `user` - Username requesting info
 
+### Type: MetricsPlugin (optional interface)
+
+```go
+type MetricsPlugin interface {
+    Plugin
+    Metrics(ctx context.Context) PluginMetrics
+}
+```
+
+Plugins that want to report custom metrics to the Launcher implement this interface. The `Metrics` method is called periodically (controlled by `--plugin-metrics-interval-seconds`). All plugins automatically report `uptimeSeconds`; implement this interface only for additional plugin-specific metrics like cluster interaction latency.
+
+Implementations should return quickly and avoid blocking I/O.
+
+### Type: PluginMetrics
+
+```go
+type PluginMetrics struct {
+    ClusterInteractionLatency *protocol.HistogramSample
+}
+```
+
+Contains metrics data collected by a plugin.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ClusterInteractionLatency` | `*protocol.HistogramSample` | Histogram snapshot of cluster interaction latency. Nil means no data. |
+
+### Type: Histogram
+
+```go
+type Histogram struct { /* unexported fields */ }
+
+func NewHistogram(buckets []float64) *Histogram
+func (h *Histogram) Observe(v float64)
+func (h *Histogram) Drain() *protocol.HistogramSample
+```
+
+A thread-safe histogram that accumulates observations locally and can be drained into a portable snapshot for sending to the Launcher. Use `NewHistogram(ClusterInteractionLatencyBuckets)` to create one with the correct bucket boundaries.
+
+- `Observe` records a single observation (e.g., a latency measurement in seconds). Safe for concurrent use.
+- `Drain` collects all accumulated observations since the last drain, resets the histogram, and returns a portable snapshot. Returns nil if no observations have been recorded.
+
+### Variable: ClusterInteractionLatencyBuckets
+
+```go
+var ClusterInteractionLatencyBuckets = []float64{
+    0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 10.0, 30.0,
+}
+```
+
+The histogram bucket upper bounds (in seconds) for cluster interaction latency. These must match the Launcher's bucket boundaries so histogram data can be replayed correctly.
+
 ### Type: ResponseWriter
 
 ```go
@@ -373,11 +453,17 @@ Closes the stream. Must be called when streaming is complete.
 
 ```go
 type Runtime struct {
-    // contains filtered or unexported fields
+    MaxMessageSize  int
+    MetricsInterval time.Duration
 }
 ```
 
 The Runtime handles the request/response protocol and dispatches to plugin methods.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `MaxMessageSize` | `int` | Upper limit on message size for requests and responses. |
+| `MetricsInterval` | `time.Duration` | Interval between periodic metrics reports. Zero disables. Typically set from `DefaultOptions.MetricsInterval`. |
 
 #### Function: NewRuntime
 
@@ -413,6 +499,7 @@ type DefaultOptions struct {
     Debug             bool
     JobExpiry         time.Duration
     HeartbeatInterval time.Duration
+    MetricsInterval   time.Duration
     LauncherConfig    string
     PluginName        string
     ScratchPath       string
