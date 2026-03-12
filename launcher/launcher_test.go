@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
@@ -58,7 +60,7 @@ type configReloadResult struct {
 func runConfigReloadHandler(t *testing.T, p Plugin, requestID uint64) configReloadResult {
 	t.Helper()
 	ctx := context.Background()
-	handler := createHandler(ctx, p)
+	handler := createHandler(ctx, slog.Default(), p, 0, time.Now())
 	ch := make(chan interface{}, 1)
 	req := newConfigReloadRequest(t, requestID)
 	handler(req, ch)

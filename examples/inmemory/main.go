@@ -376,10 +376,12 @@ func main() {
 		nextID: 0,
 	}
 
-	// Create the runtime and start handling requests
-	// This blocks until the context is cancelled (e.g., Ctrl+C)
+	// Create the runtime and start handling requests.
+	// This blocks until the context is cancelled (e.g., Ctrl+C).
 	lgr.Info("Plugin ready to accept requests")
-	if err := launcher.NewRuntime(lgr, plugin).Run(ctx); err != nil {
+	rt := launcher.NewRuntime(lgr, plugin)
+	rt.MetricsInterval = options.MetricsInterval
+	if err := rt.Run(ctx); err != nil {
 		lgr.Error("Plugin runtime error", "error", err)
 		os.Exit(1)
 	}

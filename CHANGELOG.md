@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plugin API 3.7.0**: Plugin metrics framework. Plugins can now report periodic metrics to the Launcher for Prometheus exposition.
+  - `MetricsPlugin` optional interface in `launcher` package — plugins implement `Metrics(ctx context.Context) PluginMetrics` to report custom metrics
+  - `PluginMetrics` struct with `ClusterInteractionLatency` field for scheduler command latency histograms
+  - `Histogram` type for thread-safe metric accumulation with `Observe()` and `Drain()` methods
+  - `ClusterInteractionLatencyBuckets` variable with standard bucket boundaries matching the Launcher
+  - `MetricsInterval` field on `Runtime` and `DefaultOptions` for configuring the collection interval
+  - `--plugin-metrics-interval-seconds` CLI flag (default: 60, 0 to disable)
+  - Framework automatically reports `uptimeSeconds`; custom metrics are opt-in via `MetricsPlugin`
+  - `RunMetrics` conformance test scenario for validating `MetricsPlugin` implementations
+- Protocol support for metrics response (message type 203) in `internal/protocol`
+- New dependency: `github.com/prometheus/client_golang` for histogram accumulation
 - **Plugin API 3.6.0**: Config reload support. The Launcher can now request plugins to reload configuration at runtime without restarting.
   - `ConfigReloadablePlugin` optional interface in `launcher` package — plugins implement `ReloadConfig(ctx context.Context) error` to handle reload requests
   - `ConfigReloadError` type for classified reload failures (Load, Validate, Save)

@@ -1045,6 +1045,89 @@ func (p *MyPlugin) ReloadConfig(ctx context.Context) error {
 }
 ```
 
+### Plugin metrics
+
+The Launcher collects periodic metrics from plugins and exposes them on its Prometheus `/metrics` endpoint. All plugins automatically report `uptimeSeconds`. Plugins that interact with external schedulers can report additional metrics by implementing the `MetricsPlugin` interface.
+
+The Launcher passes `--plugin-metrics-interval-seconds <N>` at startup (default: 60, 0 to disable). The SDK handles the timer and IPC automatically.
+
+#### Reporting cluster interaction latency
+
+If your plugin runs CLI commands or makes API calls to a scheduler, you can measure their latency and report it as a histogram. A cluster interaction is any individual call to the external scheduler — a CLI command invocation, an HTTP/gRPC API request, or an SDK method call. Measure the wall-clock duration of the external call itself, from invocation to response.
+
+**What to measure:**
+
+- Time every external scheduler call: job submission, control operations (stop/kill/cancel), status queries, output retrieval, resource usage queries, etc.
+- For batch operations (e.g., a single `squeue` call that returns status for many jobs), record one observation for the entire call, not one per job.
+- Measure only the external call duration. Don't include internal cache lookups, response serialization, or in-process logic.
+
+**Setup:**
+
+```go
+type MyPlugin struct {
+    latency *launcher.Histogram
+}
+
+func NewMyPlugin() *MyPlugin {
+    return &MyPlugin{
+        latency: launcher.NewHistogram(launcher.ClusterInteractionLatencyBuckets),
+    }
+}
+
+// Metrics implements launcher.MetricsPlugin.
+func (p *MyPlugin) Metrics(ctx context.Context) launcher.PluginMetrics {
+    return launcher.PluginMetrics{
+        ClusterInteractionLatency: p.latency.Drain(),
+    }
+}
+```
+
+Then record latency wherever your plugin calls the scheduler:
+
+```go
+func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, user string, job *api.Job) {
+    start := time.Now()
+    result, err := runSchedulerCommand(ctx, "submit", job)
+    p.latency.Observe(time.Since(start).Seconds())
+    // ... handle result ...
+}
+
+func (p *MyPlugin) ControlJob(ctx context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
+    start := time.Now()
+    err := runSchedulerCommand(ctx, string(op), id)
+    p.latency.Observe(time.Since(start).Seconds())
+    // ... handle result ...
+}
+
+func (p *MyPlugin) pollStatuses(ctx context.Context) {
+    // Batch status query — one observation for the entire call
+    start := time.Now()
+    statuses, err := runSchedulerCommand(ctx, "status", "--all")
+    p.latency.Observe(time.Since(start).Seconds())
+    // ... update cache ...
+}
+```
+
+The `Histogram` type is thread-safe. Call `Observe` from any goroutine. The framework calls `Drain` on each metrics tick, which collects all accumulated observations and resets the histogram.
+
+#### Wiring metrics into the runtime
+
+Pass the metrics interval from `DefaultOptions` to the `Runtime`:
+
+```go
+opts := &launcher.DefaultOptions{}
+launcher.MustLoadOptions(opts, "myplugin")
+
+rt := launcher.NewRuntime(lgr, plugin)
+rt.MetricsInterval = opts.MetricsInterval
+```
+
+#### How it works
+
+The plugin accumulates metrics locally (using a prometheus histogram as a cache). On each metrics tick, the framework drains the accumulated data and sends a `MetricsResponse` (message type 203) to the Launcher over the IPC channel. The Launcher replays the histogram data into its own Prometheus registry, which API clients can then query.
+
+This design avoids adding request/response overhead to the Launcher-plugin connection for metrics collection. The team rejected the on-demand alternative because there is no QoS on the IPC channel and metrics requests could delay more important messages.
+
 ### User profiles
 
 System administrators may want to set default or maximum values for certain features on a per-user or per-group basis. For example, different groups of users could have different memory limits or CPU counts.
