@@ -176,8 +176,8 @@ func TestMockStreamResponseWriter(t *testing.T) {
 	t.Run("captures status updates", func(t *testing.T) {
 		w := plugintest.NewMockStreamResponseWriter()
 
-		w.WriteJobStatus("job-1", "My Job", api.StatusRunning, "Job started")
-		w.WriteJobStatus("job-1", "My Job", api.StatusFinished, "Job completed")
+		w.WriteJobStatus("job-1", "My Job", api.StatusRunning, "", "Job started")
+		w.WriteJobStatus("job-1", "My Job", api.StatusFinished, "", "Job completed")
 
 		plugintest.AssertStatusCount(t, w, 2)
 

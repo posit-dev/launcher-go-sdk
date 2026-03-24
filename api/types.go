@@ -401,7 +401,9 @@ type Job struct {
 	StatusMsg string `json:"statusMessage,omitempty"`
 
 	// The standard code/enum for the current status of the Job, if known.
-	// Optional.
+	// Optional. Carried in job state responses as part of the Job payload,
+	// and forwarded explicitly in job status stream responses via
+	// [launcher.StreamResponseWriter.WriteJobStatus].
 	StatusCode string `json:"statusCode,omitempty"`
 
 	// The process ID of the Job, if applicable. Optional.

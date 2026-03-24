@@ -142,6 +142,62 @@ func TestNewMetricsResponse_WithLatency(t *testing.T) {
 	}
 }
 
+func TestNewJobStatusStreamResponse(t *testing.T) {
+	t.Run("all fields present", func(t *testing.T) {
+		resp := NewJobStatusStreamResponse(5, "job-1", "My Job", "Running", "PodRunning", "all good")
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+
+		var got map[string]interface{}
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+
+		if mt := int(got["messageType"].(float64)); mt != 3 {
+			t.Errorf("messageType = %d, want 3", mt)
+		}
+		if id := got["id"].(string); id != "job-1" {
+			t.Errorf("id = %q, want %q", id, "job-1")
+		}
+		if name := got["name"].(string); name != "My Job" {
+			t.Errorf("name = %q, want %q", name, "My Job")
+		}
+		if status := got["status"].(string); status != "Running" {
+			t.Errorf("status = %q, want %q", status, "Running")
+		}
+		if code := got["statusCode"].(string); code != "PodRunning" {
+			t.Errorf("statusCode = %q, want %q", code, "PodRunning")
+		}
+		if msg := got["statusMessage"].(string); msg != "all good" {
+			t.Errorf("statusMessage = %q, want %q", msg, "all good")
+		}
+	})
+
+	t.Run("statusCode omitted when empty", func(t *testing.T) {
+		resp := NewJobStatusStreamResponse(5, "job-1", "My Job", "Running", "", "")
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+
+		var got map[string]interface{}
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+
+		if _, ok := got["statusCode"]; ok {
+			t.Error("statusCode should be omitted when empty")
+		}
+		if _, ok := got["statusMessage"]; ok {
+			t.Error("statusMessage should be omitted when empty")
+		}
+	})
+}
+
 func TestNewConfigReloadResponse_ErrorTypes(t *testing.T) {
 	tests := []struct {
 		name      string

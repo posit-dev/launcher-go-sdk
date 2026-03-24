@@ -289,12 +289,12 @@ type JobStatusStreamResponse struct {
 	ID        api.JobID        `json:"id"`
 	Name      string           `json:"name"`
 	Status    string           `json:"status"`
-	Msg       string           `json:"statusMessage,omitempty"`
 	Code      string           `json:"statusCode,omitempty"`
+	Msg       string           `json:"statusMessage,omitempty"`
 }
 
 // NewJobStatusStreamResponse creates a new job status stream response.
-func NewJobStatusStreamResponse(responseID uint64, id, name, status, msg string) *JobStatusStreamResponse {
+func NewJobStatusStreamResponse(responseID uint64, id, name, status, statusCode, msg string) *JobStatusStreamResponse {
 	base := responseBase{responseJobStatus, 0, responseID}
 	return &JobStatusStreamResponse{
 		responseBase: base,
@@ -302,6 +302,7 @@ func NewJobStatusStreamResponse(responseID uint64, id, name, status, msg string)
 		ID:           api.JobID(id),
 		Name:         name,
 		Status:       status,
+		Code:         statusCode,
 		Msg:          msg,
 	}
 }
