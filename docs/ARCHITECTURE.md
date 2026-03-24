@@ -353,6 +353,28 @@ type Error struct {
 - Better than string parsing
 - Follows Launcher API specification
 
+### Metrics collection
+
+The SDK supports periodic metrics reporting to the Launcher (API v3.7.0+). Unlike all other protocol messages, the plugin initiates metrics — it sends `MetricsResponse` messages on a timer without any corresponding request.
+
+```
+Bootstrap completes → Start metrics goroutine → Every N seconds:
+    Collect uptime + plugin metrics → Serialize → Send via response channel
+```
+
+**Data flow:**
+
+```
+Plugin (local accumulator)  →  MetricsResponse (JSON/IPC)  →  Launcher (Prometheus registry)
+       Observe()                    Drain + serialize              ObserveMultiple()
+```
+
+The plugin uses a local prometheus histogram as a cache, accumulating observations on the hot path (e.g., timing each Slurm command). On each metrics tick, the framework drains the histogram (collecting and resetting it) and sends the snapshot to the Launcher, which replays the data into its own Prometheus registry.
+
+**Why push-based?** The Launcher-plugin IPC channel has no QoS. Requesting metrics on-demand could delay time-sensitive messages (job status updates, control operations). Push-based metrics use the existing response channel and are inherently non-blocking from the Launcher's perspective.
+
+**Why swap-on-drain?** The Go prometheus client does not expose a `Reset()` method on individual histograms. The SDK works around this by atomically swapping the current histogram for a fresh one on each drain, then collecting from the old instance.
+
 ## Job cache design
 
 ### Storage and startup

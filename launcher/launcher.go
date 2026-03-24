@@ -74,9 +74,14 @@ type DefaultOptions struct {
 	// Path to the plugin's configuration file, if it has one.
 	ConfigFile string
 
-	jobExpiryHours   uint
-	heartbeatSeconds uint
-	threadPoolSize   uint64
+	// MetricsInterval is the interval between periodic metrics reports sent
+	// to the Launcher. When zero, metrics collection is disabled.
+	MetricsInterval time.Duration
+
+	jobExpiryHours         uint
+	heartbeatSeconds       uint
+	metricsIntervalSeconds uint
+	threadPoolSize         uint64
 }
 
 // AddFlags implements Options and exposes the default plugin options as
@@ -100,6 +105,8 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 		"scratch path where temporary plugin files are stored")
 	f.StringVar(&o.ServerUser, "server-user", "rstudio-server",
 		"user to run the plugin as")
+	f.UintVar(&o.metricsIntervalSeconds, "plugin-metrics-interval-seconds", uint(60),
+		"plugin metrics collection interval in seconds - 0 to disable")
 	f.Uint64Var(&o.threadPoolSize, "thread-pool-size", 0,
 		"the number of threads in the thread pool (ignored)")
 	// This is passed by the smoke-test tool but not by Launcher itself.
@@ -114,8 +121,9 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 
 // Validate implements Options.
 func (o *DefaultOptions) Validate() error {
-	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)             //nolint:gosec // CLI flag values are small integers
-	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds) //nolint:gosec // CLI flag values are small integers
+	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)                 //nolint:gosec // CLI flag values are small integers
+	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds)     //nolint:gosec // CLI flag values are small integers
+	o.MetricsInterval = time.Second * time.Duration(o.metricsIntervalSeconds) //nolint:gosec // CLI flag values are small integers
 	return nil
 }
 
@@ -241,6 +249,22 @@ type ConfigReloadablePlugin interface {
 	ReloadConfig(ctx context.Context) error
 }
 
+// MetricsPlugin can be implemented by plugins that want to report custom
+// metrics to the Launcher. The Metrics method is called periodically
+// (controlled by the --plugin-metrics-interval-seconds flag). The returned
+// PluginMetrics will be sent alongside the framework-managed uptimeSeconds.
+//
+// All plugins automatically report uptimeSeconds. Implement this interface
+// only if you need to report additional plugin-specific metrics such as
+// cluster interaction latency.
+type MetricsPlugin interface {
+	Plugin
+
+	// Metrics is called periodically to collect plugin-specific metrics.
+	// Implementations should return quickly and avoid blocking I/O.
+	Metrics(ctx context.Context) PluginMetrics
+}
+
 // ConfigReloadError represents a configuration reload failure with a
 // classified error type. Plugins should return this from
 // [ConfigReloadablePlugin.ReloadConfig] to provide both an error type and
@@ -343,8 +367,18 @@ type Runtime struct {
 	// MaxMessageSize is the upper limit on message size for requests and
 	// responses.
 	MaxMessageSize int
-	lgr            *slog.Logger
-	p              Plugin
+
+	// MetricsInterval is the interval between periodic metrics reports sent
+	// to the Launcher. When zero (the default), metrics collection is
+	// disabled. Set this from [DefaultOptions.MetricsInterval] after
+	// calling [NewRuntime]:
+	//
+	//	rt := launcher.NewRuntime(lgr, plugin)
+	//	rt.MetricsInterval = options.MetricsInterval
+	MetricsInterval time.Duration
+
+	lgr *slog.Logger
+	p   Plugin
 }
 
 // NewRuntime creates a new Runtime for the given plugin.
@@ -366,11 +400,18 @@ func (r *Runtime) Run(ctx context.Context) error {
 	defer func() {
 		r.lgr.Info("Plugin stopped")
 	}()
-	return comm.Serve(ctx, createHandler(ctx, r.p))
+	if r.MetricsInterval > 0 {
+		r.lgr.Info("Metrics collection enabled", "interval", r.MetricsInterval)
+	} else {
+		r.lgr.Info("Metrics collection disabled (interval=0)")
+	}
+	startTime := time.Now()
+	return comm.Serve(ctx, createHandler(ctx, r.lgr, r.p, r.MetricsInterval, startTime))
 }
 
-func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch chan<- interface{}) {
+func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInterval time.Duration, startTime time.Time) func(req protocol.Request, ch chan<- interface{}) {
 	s := newStreamStore(ctx)
+	var metricsOnce sync.Once
 	return func(req protocol.Request, ch chan<- interface{}) {
 		var w *defaultResponseWriter
 		switch r := req.(type) {
@@ -395,6 +436,12 @@ func createHandler(ctx context.Context, p Plugin) func(req protocol.Request, ch 
 			}
 			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteBootstrap()
+			// Start metrics collection after bootstrap completes.
+			if metricsInterval > 0 {
+				metricsOnce.Do(func() {
+					go metricsLoop(ctx, lgr, ch, p, metricsInterval, startTime)
+				})
+			}
 		case *protocol.SubmitJobRequest:
 			w = newResponseWriter(req, ch)
 			if r.Username != "*" && r.Job.User == "" {
