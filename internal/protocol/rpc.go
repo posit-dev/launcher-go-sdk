@@ -396,18 +396,19 @@ type ClusterInfoResponse struct {
 
 // ClusterInfo is the body of a cluster info response; reused for the multicluster extension.
 type ClusterInfo struct {
-	Containers   bool                      `json:"supportsContainers"`
-	Configs      []api.JobConfig           `json:"config"`
-	Constraints  []api.PlacementConstraint `json:"placementConstraints"`
-	Queues       []string                  `json:"queues,omitempty"`
-	DefaultQueue string                    `json:"defaultQueue,omitempty"`
-	Limits       []api.ResourceLimit       `json:"resourceLimits"`
-	Images       []string                  `json:"images,omitempty"`
-	DefaultImage string                    `json:"defaultImage,omitempty"`
-	AllowUnknown bool                      `json:"allowUnknownImages"`
-	Profiles     []api.ResourceProfile     `json:"resourceProfiles"`
-	HostNetwork  bool                      `json:"containersUseHostNetwork"`
-	Name         string                    `json:"name,omitempty"`
+	Containers     bool                      `json:"supportsContainers"`
+	InitContainers bool                      `json:"supportsInitContainers"`
+	Configs        []api.JobConfig           `json:"config"`
+	Constraints    []api.PlacementConstraint `json:"placementConstraints"`
+	Queues         []string                  `json:"queues,omitempty"`
+	DefaultQueue   string                    `json:"defaultQueue,omitempty"`
+	Limits         []api.ResourceLimit       `json:"resourceLimits"`
+	Images         []string                  `json:"images,omitempty"`
+	DefaultImage   string                    `json:"defaultImage,omitempty"`
+	AllowUnknown   bool                      `json:"allowUnknownImages"`
+	Profiles       []api.ResourceProfile     `json:"resourceProfiles"`
+	HostNetwork    bool                      `json:"containersUseHostNetwork"`
+	Name           string                    `json:"name,omitempty"`
 }
 
 // NewClusterInfoResponse creates a new cluster info response.
@@ -482,17 +483,19 @@ type HistogramSample struct {
 type MetricsResponse struct {
 	responseBase
 	UptimeSeconds                   uint64           `json:"uptimeSeconds"`
+	MemoryUsageBytes                uint64           `json:"memoryUsageBytes"`
 	ClusterInteractionLatencySample *HistogramSample `json:"clusterInteractionLatencySample,omitempty"`
 }
 
 // NewMetricsResponse creates a new metrics response. The requestId and
 // responseId are both zero because this message is not a response to a
 // request.
-func NewMetricsResponse(uptimeSeconds uint64, latency *HistogramSample) *MetricsResponse {
+func NewMetricsResponse(uptimeSeconds uint64, memoryBytes uint64, latency *HistogramSample) *MetricsResponse {
 	base := responseBase{responseMetrics, 0, 0}
 	return &MetricsResponse{
 		responseBase:                    base,
 		UptimeSeconds:                   uptimeSeconds,
+		MemoryUsageBytes:                memoryBytes,
 		ClusterInteractionLatencySample: latency,
 	}
 }

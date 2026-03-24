@@ -301,6 +301,32 @@ type Container struct {
 	SupplementalGroups []int `json:"supplementalGroupIds,omitempty"`
 }
 
+// InitContainer is a container that runs to completion before the main job
+// container starts. Init containers are only used when the cluster reports
+// supportsInitContainers in its ClusterInfo response.
+type InitContainer struct {
+	// The name of the init container.
+	Name string `json:"name"`
+
+	// The name of the container image to use.
+	Image string `json:"image"`
+
+	// The shell command to run. Mutually exclusive with Exe.
+	Command string `json:"command,omitempty"`
+
+	// The executable to run. Mutually exclusive with Command.
+	Exe string `json:"exe,omitempty"`
+
+	// The arguments to pass to the Command or Exe.
+	Args []string `json:"args,omitempty"`
+
+	// The file system mounts to apply when the init container runs.
+	Mounts []Mount `json:"mounts,omitempty"`
+
+	// The environment variables for the init container.
+	Env []Env `json:"environment,omitempty"`
+}
+
 // Env is an environment variable.
 type Env struct {
 	// The name of the environment variable.
@@ -360,6 +386,10 @@ type Job struct {
 	// The container configuration of the Job, if the Cluster supports
 	// containers. Optional.
 	Container *Container `json:"container,omitempty"`
+
+	// The init containers to run before the main job container. Only used
+	// when the cluster reports supportsInitContainers. Optional.
+	InitContainers []InitContainer `json:"initContainers,omitempty"`
 
 	// The host on which the Job was (or is being) run.
 	Host string `json:"host,omitempty"`
@@ -434,6 +464,11 @@ type Job struct {
 	// "custom".
 	Profile string `json:"resourceProfile,omitempty"`
 
+	// The persistent identifier for the Launcher instance that submitted
+	// this Job. Set by the Launcher; plugins must preserve and return
+	// this value unchanged.
+	InstanceID string `json:"instanceId,omitempty"`
+
 	// Plugin-local storage of job attributes not exposed through Launcher's
 	// existing API.
 	Misc map[string]interface{} `json:"-"`
@@ -462,6 +497,8 @@ func (job *Job) WithFields(fields []string) *Job {
 			scrubbed.WorkDir = job.WorkDir
 		case "container":
 			scrubbed.Container = job.Container
+		case "initContainers":
+			scrubbed.InitContainers = job.InitContainers
 		case "host":
 			scrubbed.Host = job.Host
 		case "status":
@@ -508,6 +545,8 @@ func (job *Job) WithFields(fields []string) *Job {
 			scrubbed.Metadata = job.Metadata
 		case "resourceProfile":
 			scrubbed.Profile = job.Profile
+		case "instanceId":
+			scrubbed.InstanceID = job.InstanceID
 		}
 	}
 	return scrubbed

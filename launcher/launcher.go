@@ -332,18 +332,19 @@ type ClusterOptions struct {
 
 func (o *ClusterOptions) toProtocol() protocol.ClusterInfo {
 	return protocol.ClusterInfo{
-		Containers:   len(o.ImageOpt.Images) != 0,
-		Constraints:  o.Constraints,
-		Queues:       o.Queues,
-		DefaultQueue: o.DefaultQueue,
-		Limits:       o.Limits,
-		Images:       o.ImageOpt.Images,
-		DefaultImage: o.ImageOpt.Default,
-		AllowUnknown: o.ImageOpt.AllowUnknown,
-		Configs:      o.Configs,
-		Profiles:     o.Profiles,
-		HostNetwork:  o.ImageOpt.HostNetwork,
-		Name:         o.Name,
+		Containers:     len(o.ImageOpt.Images) != 0,
+		InitContainers: o.ImageOpt.InitContainers,
+		Constraints:    o.Constraints,
+		Queues:         o.Queues,
+		DefaultQueue:   o.DefaultQueue,
+		Limits:         o.Limits,
+		Images:         o.ImageOpt.Images,
+		DefaultImage:   o.ImageOpt.Default,
+		AllowUnknown:   o.ImageOpt.AllowUnknown,
+		Configs:        o.Configs,
+		Profiles:       o.Profiles,
+		HostNetwork:    o.ImageOpt.HostNetwork,
+		Name:           o.Name,
 	}
 }
 
@@ -357,6 +358,10 @@ type ImageOptions struct {
 	// specify exposed ports. This is common when using Singularity or other
 	// HPC container solutions.
 	HostNetwork bool
+
+	// When true, the cluster supports init containers — containers that run
+	// to completion before the main job container starts.
+	InitContainers bool
 }
 
 // Errorf creates an error with the corresponding plugin API code.
