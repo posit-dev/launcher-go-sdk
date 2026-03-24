@@ -73,8 +73,6 @@ func requestForType(rt requestType) (interface{}, error) {
 		return &JobNetworkRequest{}, nil
 	case requestClusterInfo:
 		return &ClusterInfoRequest{}, nil
-	case requestMultiClusterInfo:
-		return &MultiClusterInfoRequest{}, nil
 	case requestSetLoadBalancerNodes:
 		return &SetLoadBalancerNodesRequest{}, nil
 	case requestConfigReload:
@@ -97,7 +95,6 @@ const (
 	requestJobResourceUtil
 	requestJobNetwork
 	requestClusterInfo
-	requestMultiClusterInfo     requestType = 17
 	requestSetLoadBalancerNodes requestType = 201
 	requestConfigReload         requestType = 202
 )
@@ -207,11 +204,6 @@ type SetLoadBalancerNodesRequest struct {
 	Nodes []api.Node `json:"nodes"`
 }
 
-// MultiClusterInfoRequest is an extension mechanism for supporting multiple clusters.
-type MultiClusterInfoRequest struct {
-	BaseUserRequest
-}
-
 // ConfigReloadRequest is the config reload request.
 type ConfigReloadRequest struct {
 	BaseUserRequest
@@ -230,7 +222,6 @@ const (
 	responseJobResourceUtil
 	responseJobNetwork
 	responseClusterInfo
-	responseMultiClusterInfo     responseType = 17
 	responseSetLoadBalancerNodes responseType = 201
 	responseConfigReload         responseType = 202
 	responseMetrics              responseType = 203
@@ -394,7 +385,7 @@ type ClusterInfoResponse struct {
 	ClusterInfo
 }
 
-// ClusterInfo is the body of a cluster info response; reused for the multicluster extension.
+// ClusterInfo is the body of a cluster info response.
 type ClusterInfo struct {
 	Containers     bool                      `json:"supportsContainers"`
 	InitContainers bool                      `json:"supportsInitContainers"`
@@ -408,7 +399,6 @@ type ClusterInfo struct {
 	AllowUnknown   bool                      `json:"allowUnknownImages"`
 	Profiles       []api.ResourceProfile     `json:"resourceProfiles"`
 	HostNetwork    bool                      `json:"containersUseHostNetwork"`
-	Name           string                    `json:"name,omitempty"`
 }
 
 // NewClusterInfoResponse creates a new cluster info response.
@@ -427,21 +417,6 @@ func NewClusterInfoResponse(requestID, responseID uint64, cluster ClusterInfo) *
 		cluster.Profiles = []api.ResourceProfile{}
 	}
 	return &ClusterInfoResponse{responseBase: base, ClusterInfo: cluster}
-}
-
-// MultiClusterInfoResponse is an extension mechanism for supporting multiple clusters.
-type MultiClusterInfoResponse struct {
-	responseBase
-	Clusters []ClusterInfo `json:"clusters"`
-}
-
-// NewMultiClusterInfoResponse creates a new multicluster info response.
-func NewMultiClusterInfoResponse(requestID, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
-	base := responseBase{responseMultiClusterInfo, requestID, responseID}
-	if clusters == nil {
-		clusters = []ClusterInfo{} // Ensure we never send null.
-	}
-	return &MultiClusterInfoResponse{responseBase: base, Clusters: clusters}
 }
 
 // SetLoadBalancerNodesResponse is the set load balanced nodes response.

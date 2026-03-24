@@ -479,12 +479,6 @@ func NewClusterOptions() *ClusterOptionsBuilder {
 	}
 }
 
-// WithName sets the cluster name.
-func (b *ClusterOptionsBuilder) WithName(name string) *ClusterOptionsBuilder {
-	b.opts.Name = name
-	return b
-}
-
 // WithQueue adds a queue.
 func (b *ClusterOptionsBuilder) WithQueue(queue string) *ClusterOptionsBuilder {
 	b.opts.Queues = append(b.opts.Queues, queue)

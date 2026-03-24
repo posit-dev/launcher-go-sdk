@@ -212,14 +212,6 @@ type BootstrappedPlugin interface {
 	Bootstrap(ctx context.Context, w ResponseWriter)
 }
 
-// MultiClusterPlugin can be implemented by plugins that allow job submission to
-// more than one cluster. Note that this is an extension mechanism not supported
-// by all Launcher implementations.
-type MultiClusterPlugin interface {
-	Plugin
-	GetClusters(ctx context.Context, w MultiClusterResponseWriter, user string)
-}
-
 // LoadBalancedPlugin can be implemented by plugins that must be aware of other
 // nodes.
 type LoadBalancedPlugin interface {
@@ -311,13 +303,6 @@ type StreamResponseWriter interface {
 	Close() error
 }
 
-// MultiClusterResponseWriter is the writer for multicluster responses.
-type MultiClusterResponseWriter interface {
-	ResponseWriter
-	// WriteClusters sends Launcher information about available clusters.
-	WriteClusters([]ClusterOptions) error
-}
-
 // ClusterOptions describes the capabilities and configuration of a cluster.
 type ClusterOptions struct {
 	Constraints  []api.PlacementConstraint
@@ -327,7 +312,6 @@ type ClusterOptions struct {
 	ImageOpt     ImageOptions
 	Configs      []api.JobConfig
 	Profiles     []api.ResourceProfile
-	Name         string
 }
 
 func (o *ClusterOptions) toProtocol() protocol.ClusterInfo {
@@ -344,7 +328,6 @@ func (o *ClusterOptions) toProtocol() protocol.ClusterInfo {
 		Configs:        o.Configs,
 		Profiles:       o.Profiles,
 		HostNetwork:    o.ImageOpt.HostNetwork,
-		Name:           o.Name,
 	}
 }
 
@@ -527,16 +510,6 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 		case *protocol.ClusterInfoRequest:
 			w = newResponseWriter(req, ch)
 			p.ClusterInfo(ctx, w, r.Username)
-		case *protocol.MultiClusterInfoRequest:
-			w = newResponseWriter(req, ch)
-			mcPlugin, ok := p.(MultiClusterPlugin)
-			if !ok {
-				// Servers must allow multicluster requests to return a
-				// single-cluster response.
-				p.ClusterInfo(ctx, w, r.Username)
-				return
-			}
-			mcPlugin.GetClusters(ctx, w, r.Username)
 		case *protocol.SetLoadBalancerNodesRequest:
 			w = newResponseWriter(req, ch)
 			lbPlugin, ok := p.(LoadBalancedPlugin)
@@ -719,15 +692,6 @@ func (w *defaultResponseWriter) WriteClusterInfo(o ClusterOptions) error {
 	return w.sendResponse(resp)
 }
 
-func (w *defaultResponseWriter) WriteClusters(o []ClusterOptions) error {
-	clusters := make([]protocol.ClusterInfo, len(o))
-	for i := range o {
-		clusters[i] = o[i].toProtocol()
-	}
-	resp := protocol.NewMultiClusterInfoResponse(w.req.ID(), nextResponseID(),
-		clusters)
-	return w.sendResponse(resp)
-}
 
 func (w *defaultResponseWriter) WriteHeartbeat() error {
 	return w.sendResponse(protocol.NewHeartbeatResponse())
