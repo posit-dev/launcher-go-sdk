@@ -845,10 +845,10 @@ type ResourceProfile struct {
 	Limits []ResourceLimit `json:"limits,omitempty"`
 
 	// The submission queue for this profile, if applicable. Optional.
-	Queue string `json:"queue"`
+	Queue string `json:"queue,omitempty"`
 
 	// Placement constraints for this profile. Optional.
-	Constraints []PlacementConstraint `json:"placementConstraints"`
+	Constraints []PlacementConstraint `json:"placementConstraints,omitempty"`
 }
 
 // Node represents a Launcher/plugin node when running in a load-balanced scenario.
