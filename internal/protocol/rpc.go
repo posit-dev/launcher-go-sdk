@@ -294,12 +294,13 @@ type JobStatusStreamResponse struct {
 }
 
 // NewJobStatusStreamResponse creates a new job status stream response.
-func NewJobStatusStreamResponse(responseID uint64, id, status, msg string) *JobStatusStreamResponse {
+func NewJobStatusStreamResponse(responseID uint64, id, name, status, msg string) *JobStatusStreamResponse {
 	base := responseBase{responseJobStatus, 0, responseID}
 	return &JobStatusStreamResponse{
 		responseBase: base,
 		Sequences:    []StreamSequence{}, // Ensure we never send null.
 		ID:           api.JobID(id),
+		Name:         name,
 		Status:       status,
 		Msg:          msg,
 	}

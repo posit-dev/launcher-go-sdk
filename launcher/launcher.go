@@ -296,7 +296,7 @@ type ResponseWriter interface {
 // StreamResponseWriter is the interface for writing streaming responses.
 type StreamResponseWriter interface {
 	ResponseWriter
-	WriteJobStatus(id api.JobID, status, msg string) error
+	WriteJobStatus(id api.JobID, name, status, msg string) error
 	WriteJobOutput(output string, outputType api.JobOutput) error
 	WriteJobResourceUtil(cpuPercent float64, cpuTime float64,
 		residentMem float64, virtualMem float64) error
@@ -610,13 +610,13 @@ func (w *defaultResponseWriter) WriteJobs(jobs []*api.Job) error {
 // non-stream response writer.
 var errNotStreamWriter = fmt.Errorf("method called on non-stream response writer")
 
-func (w *defaultResponseWriter) WriteJobStatus(id api.JobID, status, msg string) error {
+func (w *defaultResponseWriter) WriteJobStatus(id api.JobID, name, status, msg string) error {
 	if w.store == nil {
 		return errNotStreamWriter
 	}
 	rid := w.req.ID()
 	resp := protocol.NewJobStatusStreamResponse(nextResponseID(), string(id),
-		status, msg)
+		name, status, msg)
 	resp.Sequences = []protocol.StreamSequence{
 		{RequestID: rid, SequenceID: w.store.SequenceID(rid)},
 	}
@@ -691,7 +691,6 @@ func (w *defaultResponseWriter) WriteClusterInfo(o ClusterOptions) error {
 		o.toProtocol())
 	return w.sendResponse(resp)
 }
-
 
 func (w *defaultResponseWriter) WriteHeartbeat() error {
 	return w.sendResponse(protocol.NewHeartbeatResponse())

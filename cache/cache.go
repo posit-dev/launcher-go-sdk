@@ -249,7 +249,7 @@ func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamRespons
 	done := false
 	err := r.Lookup(user, id, func(job *api.Job) {
 		//nolint:errcheck // fire-and-forget convenience wrapper
-		w.WriteJobStatus(job.ID, job.Status, job.StatusMsg)
+		w.WriteJobStatus(job.ID, job.Name, job.Status, job.StatusMsg)
 		// Break off early if we know there will be no further updates.
 		if api.TerminalStatus(job.Status) {
 			done = true
@@ -275,7 +275,7 @@ func (r *JobCache) StreamJobStatus(ctx context.Context, w launcher.StreamRespons
 				return
 			}
 			//nolint:errcheck // fire-and-forget convenience wrapper
-			w.WriteJobStatus(j.ID, j.Status, j.StatusMsg)
+			w.WriteJobStatus(j.ID, j.Name, j.Status, j.StatusMsg)
 		}
 	}
 }
@@ -286,7 +286,7 @@ func (r *JobCache) StreamJobStatuses(ctx context.Context, w launcher.StreamRespo
 	r.store.JobsForUser(user, nil, func(jobs []*api.Job) {
 		for _, job := range jobs {
 			//nolint:errcheck // fire-and-forget convenience wrapper
-			w.WriteJobStatus(job.ID, job.Status, job.StatusMsg)
+			w.WriteJobStatus(job.ID, job.Name, job.Status, job.StatusMsg)
 		}
 	})
 	ch := make(chan *statusUpdate, 1)
@@ -300,7 +300,7 @@ func (r *JobCache) StreamJobStatuses(ctx context.Context, w launcher.StreamRespo
 				return
 			}
 			//nolint:errcheck // fire-and-forget convenience wrapper
-			w.WriteJobStatus(j.ID, j.Status, j.StatusMsg)
+			w.WriteJobStatus(j.ID, j.Name, j.Status, j.StatusMsg)
 		}
 	}
 }
@@ -449,13 +449,14 @@ func (s *subManager) Close() int {
 type statusUpdate struct {
 	ID        api.JobID
 	User      string
+	Name      string
 	Status    string
 	StatusMsg string
 }
 
 func newStatusUpdateFromJob(job *api.Job) *statusUpdate {
 	return &statusUpdate{
-		job.ID, job.User, job.Status, job.StatusMsg,
+		job.ID, job.User, job.Name, job.Status, job.StatusMsg,
 	}
 }
 

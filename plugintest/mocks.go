@@ -213,6 +213,7 @@ type MockStreamResponseWriter struct {
 // StatusUpdate represents a job status update.
 type StatusUpdate struct {
 	ID      api.JobID
+	Name    string
 	Status  string
 	Message string
 }
@@ -248,11 +249,12 @@ func NewMockStreamResponseWriter() *MockStreamResponseWriter {
 }
 
 // WriteJobStatus implements launcher.StreamResponseWriter.
-func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, status, msg string) error {
+func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, name, status, msg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Statuses = append(m.Statuses, StatusUpdate{
 		ID:      id,
+		Name:    name,
 		Status:  status,
 		Message: msg,
 	})
