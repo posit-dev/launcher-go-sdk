@@ -35,6 +35,13 @@ type PluginMetrics struct {
 	// snapshot here via [Histogram.Drain]. When nil, no latency data is
 	// reported.
 	ClusterInteractionLatency *protocol.HistogramSample
+
+	// MemoryUsageBytes is the current memory usage of the plugin process in
+	// bytes. This field is always serialized on the wire (no omitempty).
+	// Return zero if usage is unavailable or cannot be determined; the
+	// Launcher treats zero as unknown rather than as a measurement of
+	// zero bytes.
+	MemoryUsageBytes uint64
 }
 
 // Histogram is a thread-safe histogram that accumulates observations locally
@@ -162,9 +169,9 @@ func metricsLoop(ctx context.Context, lgr *slog.Logger, ch chan<- interface{}, p
 // Metrics() implementation does not prevent uptime from being reported.
 func metricsOnce(ctx context.Context, lgr *slog.Logger, ch chan<- interface{}, mp MetricsPlugin, startTime time.Time) {
 	uptime := uint64(time.Since(startTime).Seconds())
-	latency := collectPluginMetrics(ctx, lgr, mp)
+	pm := collectPluginMetrics(ctx, lgr, mp)
 
-	resp := protocol.NewMetricsResponse(uptime, latency)
+	resp := protocol.NewMetricsResponse(uptime, pm.MemoryUsageBytes, pm.ClusterInteractionLatency)
 	select {
 	case ch <- resp:
 	default:
@@ -173,19 +180,18 @@ func metricsOnce(ctx context.Context, lgr *slog.Logger, ch chan<- interface{}, m
 }
 
 // collectPluginMetrics calls the plugin's Metrics method, recovering from
-// panics. Returns nil if the plugin is nil or panics.
-func collectPluginMetrics(ctx context.Context, lgr *slog.Logger, mp MetricsPlugin) (latency *protocol.HistogramSample) {
+// panics. Returns a zero PluginMetrics if the plugin is nil or panics.
+func collectPluginMetrics(ctx context.Context, lgr *slog.Logger, mp MetricsPlugin) (pm PluginMetrics) {
 	if mp == nil {
-		return nil
+		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			lgr.Error("Panic in plugin Metrics() call",
+				"plugin", fmt.Sprintf("%T", mp),
 				"panic", r,
 				"stack", string(debug.Stack()))
-			latency = nil
 		}
 	}()
-	metrics := mp.Metrics(ctx)
-	return metrics.ClusterInteractionLatency
+	return mp.Metrics(ctx)
 }

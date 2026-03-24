@@ -62,7 +62,7 @@ func TestNewConfigReloadResponse_Success(t *testing.T) {
 }
 
 func TestNewMetricsResponse_Basic(t *testing.T) {
-	resp := NewMetricsResponse(3600, nil)
+	resp := NewMetricsResponse(3600, 0, nil)
 
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -86,6 +86,9 @@ func TestNewMetricsResponse_Basic(t *testing.T) {
 	if uptime := uint64(got["uptimeSeconds"].(float64)); uptime != 3600 {
 		t.Errorf("uptimeSeconds = %d, want 3600", uptime)
 	}
+	if mem := uint64(got["memoryUsageBytes"].(float64)); mem != 0 {
+		t.Errorf("memoryUsageBytes = %d, want 0", mem)
+	}
 	if _, ok := got["clusterInteractionLatencySample"]; ok {
 		t.Error("clusterInteractionLatencySample should be omitted when nil")
 	}
@@ -96,7 +99,7 @@ func TestNewMetricsResponse_WithLatency(t *testing.T) {
 		Buckets: []float64{0, 2, 3, 0, 0, 0, 0, 0, 0, 0},
 		Sum:     1.52,
 	}
-	resp := NewMetricsResponse(120, latency)
+	resp := NewMetricsResponse(120, 1024*1024, latency)
 
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -113,6 +116,9 @@ func TestNewMetricsResponse_WithLatency(t *testing.T) {
 	}
 	if uptime := uint64(got["uptimeSeconds"].(float64)); uptime != 120 {
 		t.Errorf("uptimeSeconds = %d, want 120", uptime)
+	}
+	if mem := uint64(got["memoryUsageBytes"].(float64)); mem != 1024*1024 {
+		t.Errorf("memoryUsageBytes = %d, want %d", mem, 1024*1024)
 	}
 
 	sample, ok := got["clusterInteractionLatencySample"].(map[string]interface{})

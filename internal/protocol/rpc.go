@@ -465,7 +465,7 @@ type MetricsResponse struct {
 // NewMetricsResponse creates a new metrics response. The requestId and
 // responseId are both zero because this message is not a response to a
 // request.
-func NewMetricsResponse(uptimeSeconds uint64, memoryBytes uint64, latency *HistogramSample) *MetricsResponse {
+func NewMetricsResponse(uptimeSeconds, memoryBytes uint64, latency *HistogramSample) *MetricsResponse {
 	base := responseBase{responseMetrics, 0, 0}
 	return &MetricsResponse{
 		responseBase:                    base,
