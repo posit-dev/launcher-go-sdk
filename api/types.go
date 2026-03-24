@@ -623,6 +623,9 @@ type Mount struct {
 	// The destination path of the mount.
 	Path string `json:"mountPath"`
 
+	// An optional name for the mount.
+	Name string `json:"name,omitempty"`
+
 	// Whether the source path should be mounted with write permissions.
 	ReadOnly bool `json:"readOnly,omitempty"`
 
