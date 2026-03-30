@@ -62,7 +62,7 @@ func TestNewConfigReloadResponse_Success(t *testing.T) {
 }
 
 func TestNewMetricsResponse_Basic(t *testing.T) {
-	resp := NewMetricsResponse(3600, nil)
+	resp := NewMetricsResponse(3600, 0, nil)
 
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -86,6 +86,9 @@ func TestNewMetricsResponse_Basic(t *testing.T) {
 	if uptime := uint64(got["uptimeSeconds"].(float64)); uptime != 3600 {
 		t.Errorf("uptimeSeconds = %d, want 3600", uptime)
 	}
+	if mem := uint64(got["memoryUsageBytes"].(float64)); mem != 0 {
+		t.Errorf("memoryUsageBytes = %d, want 0", mem)
+	}
 	if _, ok := got["clusterInteractionLatencySample"]; ok {
 		t.Error("clusterInteractionLatencySample should be omitted when nil")
 	}
@@ -96,7 +99,7 @@ func TestNewMetricsResponse_WithLatency(t *testing.T) {
 		Buckets: []float64{0, 2, 3, 0, 0, 0, 0, 0, 0, 0},
 		Sum:     1.52,
 	}
-	resp := NewMetricsResponse(120, latency)
+	resp := NewMetricsResponse(120, 1024*1024, latency)
 
 	data, err := json.Marshal(resp)
 	if err != nil {
@@ -113,6 +116,9 @@ func TestNewMetricsResponse_WithLatency(t *testing.T) {
 	}
 	if uptime := uint64(got["uptimeSeconds"].(float64)); uptime != 120 {
 		t.Errorf("uptimeSeconds = %d, want 120", uptime)
+	}
+	if mem := uint64(got["memoryUsageBytes"].(float64)); mem != 1024*1024 {
+		t.Errorf("memoryUsageBytes = %d, want %d", mem, 1024*1024)
 	}
 
 	sample, ok := got["clusterInteractionLatencySample"].(map[string]interface{})
@@ -134,6 +140,62 @@ func TestNewMetricsResponse_WithLatency(t *testing.T) {
 	if sum := sample["sum"].(float64); sum != 1.52 {
 		t.Errorf("sum = %v, want 1.52", sum)
 	}
+}
+
+func TestNewJobStatusStreamResponse(t *testing.T) {
+	t.Run("all fields present", func(t *testing.T) {
+		resp := NewJobStatusStreamResponse(5, "job-1", "My Job", "Running", "PodRunning", "all good")
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+
+		var got map[string]interface{}
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+
+		if mt := int(got["messageType"].(float64)); mt != 3 {
+			t.Errorf("messageType = %d, want 3", mt)
+		}
+		if id := got["id"].(string); id != "job-1" {
+			t.Errorf("id = %q, want %q", id, "job-1")
+		}
+		if name := got["name"].(string); name != "My Job" {
+			t.Errorf("name = %q, want %q", name, "My Job")
+		}
+		if status := got["status"].(string); status != "Running" {
+			t.Errorf("status = %q, want %q", status, "Running")
+		}
+		if code := got["statusCode"].(string); code != "PodRunning" {
+			t.Errorf("statusCode = %q, want %q", code, "PodRunning")
+		}
+		if msg := got["statusMessage"].(string); msg != "all good" {
+			t.Errorf("statusMessage = %q, want %q", msg, "all good")
+		}
+	})
+
+	t.Run("statusCode omitted when empty", func(t *testing.T) {
+		resp := NewJobStatusStreamResponse(5, "job-1", "My Job", "Running", "", "")
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+
+		var got map[string]interface{}
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+
+		if _, ok := got["statusCode"]; ok {
+			t.Error("statusCode should be omitted when empty")
+		}
+		if _, ok := got["statusMessage"]; ok {
+			t.Error("statusMessage should be omitted when empty")
+		}
+	})
 }
 
 func TestNewConfigReloadResponse_ErrorTypes(t *testing.T) {

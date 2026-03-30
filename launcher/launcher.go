@@ -212,14 +212,6 @@ type BootstrappedPlugin interface {
 	Bootstrap(ctx context.Context, w ResponseWriter)
 }
 
-// MultiClusterPlugin can be implemented by plugins that allow job submission to
-// more than one cluster. Note that this is an extension mechanism not supported
-// by all Launcher implementations.
-type MultiClusterPlugin interface {
-	Plugin
-	GetClusters(ctx context.Context, w MultiClusterResponseWriter, user string)
-}
-
 // LoadBalancedPlugin can be implemented by plugins that must be aware of other
 // nodes.
 type LoadBalancedPlugin interface {
@@ -304,18 +296,11 @@ type ResponseWriter interface {
 // StreamResponseWriter is the interface for writing streaming responses.
 type StreamResponseWriter interface {
 	ResponseWriter
-	WriteJobStatus(id api.JobID, status, msg string) error
+	WriteJobStatus(id api.JobID, name, status, statusCode, msg string) error
 	WriteJobOutput(output string, outputType api.JobOutput) error
 	WriteJobResourceUtil(cpuPercent float64, cpuTime float64,
 		residentMem float64, virtualMem float64) error
 	Close() error
-}
-
-// MultiClusterResponseWriter is the writer for multicluster responses.
-type MultiClusterResponseWriter interface {
-	ResponseWriter
-	// WriteClusters sends Launcher information about available clusters.
-	WriteClusters([]ClusterOptions) error
 }
 
 // ClusterOptions describes the capabilities and configuration of a cluster.
@@ -327,23 +312,22 @@ type ClusterOptions struct {
 	ImageOpt     ImageOptions
 	Configs      []api.JobConfig
 	Profiles     []api.ResourceProfile
-	Name         string
 }
 
 func (o *ClusterOptions) toProtocol() protocol.ClusterInfo {
 	return protocol.ClusterInfo{
-		Containers:   len(o.ImageOpt.Images) != 0,
-		Constraints:  o.Constraints,
-		Queues:       o.Queues,
-		DefaultQueue: o.DefaultQueue,
-		Limits:       o.Limits,
-		Images:       o.ImageOpt.Images,
-		DefaultImage: o.ImageOpt.Default,
-		AllowUnknown: o.ImageOpt.AllowUnknown,
-		Configs:      o.Configs,
-		Profiles:     o.Profiles,
-		HostNetwork:  o.ImageOpt.HostNetwork,
-		Name:         o.Name,
+		Containers:     len(o.ImageOpt.Images) != 0,
+		InitContainers: o.ImageOpt.InitContainers,
+		Constraints:    o.Constraints,
+		Queues:         o.Queues,
+		DefaultQueue:   o.DefaultQueue,
+		Limits:         o.Limits,
+		Images:         o.ImageOpt.Images,
+		DefaultImage:   o.ImageOpt.Default,
+		AllowUnknown:   o.ImageOpt.AllowUnknown,
+		Configs:        o.Configs,
+		Profiles:       o.Profiles,
+		HostNetwork:    o.ImageOpt.HostNetwork,
 	}
 }
 
@@ -357,6 +341,10 @@ type ImageOptions struct {
 	// specify exposed ports. This is common when using Singularity or other
 	// HPC container solutions.
 	HostNetwork bool
+
+	// When true, the cluster supports init containers — containers that run
+	// to completion before the main job container starts.
+	InitContainers bool
 }
 
 // Errorf creates an error with the corresponding plugin API code.
@@ -522,16 +510,6 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 		case *protocol.ClusterInfoRequest:
 			w = newResponseWriter(req, ch)
 			p.ClusterInfo(ctx, w, r.Username)
-		case *protocol.MultiClusterInfoRequest:
-			w = newResponseWriter(req, ch)
-			mcPlugin, ok := p.(MultiClusterPlugin)
-			if !ok {
-				// Servers must allow multicluster requests to return a
-				// single-cluster response.
-				p.ClusterInfo(ctx, w, r.Username)
-				return
-			}
-			mcPlugin.GetClusters(ctx, w, r.Username)
 		case *protocol.SetLoadBalancerNodesRequest:
 			w = newResponseWriter(req, ch)
 			lbPlugin, ok := p.(LoadBalancedPlugin)
@@ -632,13 +610,13 @@ func (w *defaultResponseWriter) WriteJobs(jobs []*api.Job) error {
 // non-stream response writer.
 var errNotStreamWriter = fmt.Errorf("method called on non-stream response writer")
 
-func (w *defaultResponseWriter) WriteJobStatus(id api.JobID, status, msg string) error {
+func (w *defaultResponseWriter) WriteJobStatus(id api.JobID, name, status, statusCode, msg string) error {
 	if w.store == nil {
 		return errNotStreamWriter
 	}
 	rid := w.req.ID()
 	resp := protocol.NewJobStatusStreamResponse(nextResponseID(), string(id),
-		status, msg)
+		name, status, statusCode, msg)
 	resp.Sequences = []protocol.StreamSequence{
 		{RequestID: rid, SequenceID: w.store.SequenceID(rid)},
 	}
@@ -711,16 +689,6 @@ func (w *defaultResponseWriter) WriteJobNetwork(host string, addr []string) erro
 func (w *defaultResponseWriter) WriteClusterInfo(o ClusterOptions) error {
 	resp := protocol.NewClusterInfoResponse(w.req.ID(), nextResponseID(),
 		o.toProtocol())
-	return w.sendResponse(resp)
-}
-
-func (w *defaultResponseWriter) WriteClusters(o []ClusterOptions) error {
-	clusters := make([]protocol.ClusterInfo, len(o))
-	for i := range o {
-		clusters[i] = o[i].toProtocol()
-	}
-	resp := protocol.NewMultiClusterInfoResponse(w.req.ID(), nextResponseID(),
-		clusters)
 	return w.sendResponse(resp)
 }
 

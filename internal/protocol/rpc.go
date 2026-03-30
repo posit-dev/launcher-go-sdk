@@ -73,8 +73,6 @@ func requestForType(rt requestType) (interface{}, error) {
 		return &JobNetworkRequest{}, nil
 	case requestClusterInfo:
 		return &ClusterInfoRequest{}, nil
-	case requestMultiClusterInfo:
-		return &MultiClusterInfoRequest{}, nil
 	case requestSetLoadBalancerNodes:
 		return &SetLoadBalancerNodesRequest{}, nil
 	case requestConfigReload:
@@ -97,7 +95,6 @@ const (
 	requestJobResourceUtil
 	requestJobNetwork
 	requestClusterInfo
-	requestMultiClusterInfo     requestType = 17
 	requestSetLoadBalancerNodes requestType = 201
 	requestConfigReload         requestType = 202
 )
@@ -207,11 +204,6 @@ type SetLoadBalancerNodesRequest struct {
 	Nodes []api.Node `json:"nodes"`
 }
 
-// MultiClusterInfoRequest is an extension mechanism for supporting multiple clusters.
-type MultiClusterInfoRequest struct {
-	BaseUserRequest
-}
-
 // ConfigReloadRequest is the config reload request.
 type ConfigReloadRequest struct {
 	BaseUserRequest
@@ -230,7 +222,6 @@ const (
 	responseJobResourceUtil
 	responseJobNetwork
 	responseClusterInfo
-	responseMultiClusterInfo     responseType = 17
 	responseSetLoadBalancerNodes responseType = 201
 	responseConfigReload         responseType = 202
 	responseMetrics              responseType = 203
@@ -298,18 +289,20 @@ type JobStatusStreamResponse struct {
 	ID        api.JobID        `json:"id"`
 	Name      string           `json:"name"`
 	Status    string           `json:"status"`
-	Msg       string           `json:"statusMessage,omitempty"`
 	Code      string           `json:"statusCode,omitempty"`
+	Msg       string           `json:"statusMessage,omitempty"`
 }
 
 // NewJobStatusStreamResponse creates a new job status stream response.
-func NewJobStatusStreamResponse(responseID uint64, id, status, msg string) *JobStatusStreamResponse {
+func NewJobStatusStreamResponse(responseID uint64, id, name, status, statusCode, msg string) *JobStatusStreamResponse {
 	base := responseBase{responseJobStatus, 0, responseID}
 	return &JobStatusStreamResponse{
 		responseBase: base,
 		Sequences:    []StreamSequence{}, // Ensure we never send null.
 		ID:           api.JobID(id),
+		Name:         name,
 		Status:       status,
+		Code:         statusCode,
 		Msg:          msg,
 	}
 }
@@ -394,20 +387,20 @@ type ClusterInfoResponse struct {
 	ClusterInfo
 }
 
-// ClusterInfo is the body of a cluster info response; reused for the multicluster extension.
+// ClusterInfo is the body of a cluster info response.
 type ClusterInfo struct {
-	Containers   bool                      `json:"supportsContainers"`
-	Configs      []api.JobConfig           `json:"config"`
-	Constraints  []api.PlacementConstraint `json:"placementConstraints"`
-	Queues       []string                  `json:"queues,omitempty"`
-	DefaultQueue string                    `json:"defaultQueue,omitempty"`
-	Limits       []api.ResourceLimit       `json:"resourceLimits"`
-	Images       []string                  `json:"images,omitempty"`
-	DefaultImage string                    `json:"defaultImage,omitempty"`
-	AllowUnknown bool                      `json:"allowUnknownImages"`
-	Profiles     []api.ResourceProfile     `json:"resourceProfiles"`
-	HostNetwork  bool                      `json:"containersUseHostNetwork"`
-	Name         string                    `json:"name,omitempty"`
+	Containers     bool                      `json:"supportsContainers"`
+	InitContainers bool                      `json:"supportsInitContainers"`
+	Configs        []api.JobConfig           `json:"config"`
+	Constraints    []api.PlacementConstraint `json:"placementConstraints"`
+	Queues         []string                  `json:"queues,omitempty"`
+	DefaultQueue   string                    `json:"defaultQueue,omitempty"`
+	Limits         []api.ResourceLimit       `json:"resourceLimits"`
+	Images         []string                  `json:"images,omitempty"`
+	DefaultImage   string                    `json:"defaultImage,omitempty"`
+	AllowUnknown   bool                      `json:"allowUnknownImages"`
+	Profiles       []api.ResourceProfile     `json:"resourceProfiles"`
+	HostNetwork    bool                      `json:"containersUseHostNetwork"`
 }
 
 // NewClusterInfoResponse creates a new cluster info response.
@@ -426,21 +419,6 @@ func NewClusterInfoResponse(requestID, responseID uint64, cluster ClusterInfo) *
 		cluster.Profiles = []api.ResourceProfile{}
 	}
 	return &ClusterInfoResponse{responseBase: base, ClusterInfo: cluster}
-}
-
-// MultiClusterInfoResponse is an extension mechanism for supporting multiple clusters.
-type MultiClusterInfoResponse struct {
-	responseBase
-	Clusters []ClusterInfo `json:"clusters"`
-}
-
-// NewMultiClusterInfoResponse creates a new multicluster info response.
-func NewMultiClusterInfoResponse(requestID, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
-	base := responseBase{responseMultiClusterInfo, requestID, responseID}
-	if clusters == nil {
-		clusters = []ClusterInfo{} // Ensure we never send null.
-	}
-	return &MultiClusterInfoResponse{responseBase: base, Clusters: clusters}
 }
 
 // SetLoadBalancerNodesResponse is the set load balanced nodes response.
@@ -482,17 +460,19 @@ type HistogramSample struct {
 type MetricsResponse struct {
 	responseBase
 	UptimeSeconds                   uint64           `json:"uptimeSeconds"`
+	MemoryUsageBytes                uint64           `json:"memoryUsageBytes"`
 	ClusterInteractionLatencySample *HistogramSample `json:"clusterInteractionLatencySample,omitempty"`
 }
 
 // NewMetricsResponse creates a new metrics response. The requestId and
 // responseId are both zero because this message is not a response to a
 // request.
-func NewMetricsResponse(uptimeSeconds uint64, latency *HistogramSample) *MetricsResponse {
+func NewMetricsResponse(uptimeSeconds, memoryBytes uint64, latency *HistogramSample) *MetricsResponse {
 	base := responseBase{responseMetrics, 0, 0}
 	return &MetricsResponse{
 		responseBase:                    base,
 		UptimeSeconds:                   uptimeSeconds,
+		MemoryUsageBytes:                memoryBytes,
 		ClusterInteractionLatencySample: latency,
 	}
 }

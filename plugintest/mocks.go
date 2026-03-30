@@ -28,9 +28,6 @@ type MockResponseWriter struct {
 	// ClusterInfo contains the cluster info written via WriteClusterInfo.
 	ClusterInfo *launcher.ClusterOptions
 
-	// Clusters contains all clusters written via WriteClusters (for multicluster).
-	Clusters []launcher.ClusterOptions
-
 	// ConfigReloadResults contains all config reload responses written via WriteConfigReload.
 	ConfigReloadResults []ConfigReloadResult
 }
@@ -54,7 +51,6 @@ func NewMockResponseWriter() *MockResponseWriter {
 		Jobs:                [][]*api.Job{},
 		ControlResults:      []ControlResult{},
 		Networks:            []NetworkInfo{},
-		Clusters:            []launcher.ClusterOptions{},
 		ConfigReloadResults: []ConfigReloadResult{},
 	}
 }
@@ -115,14 +111,6 @@ func (m *MockResponseWriter) WriteClusterInfo(opts launcher.ClusterOptions) erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ClusterInfo = &opts
-	return nil
-}
-
-// WriteClusters implements launcher.MultiClusterResponseWriter.
-func (m *MockResponseWriter) WriteClusters(clusters []launcher.ClusterOptions) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.Clusters = clusters
 	return nil
 }
 
@@ -200,7 +188,6 @@ func (m *MockResponseWriter) Reset() {
 	m.ControlResults = []ControlResult{}
 	m.Networks = []NetworkInfo{}
 	m.ClusterInfo = nil
-	m.Clusters = []launcher.ClusterOptions{}
 	m.ConfigReloadResults = []ConfigReloadResult{}
 }
 
@@ -225,9 +212,11 @@ type MockStreamResponseWriter struct {
 
 // StatusUpdate represents a job status update.
 type StatusUpdate struct {
-	ID      api.JobID
-	Status  string
-	Message string
+	ID         api.JobID
+	Name       string
+	Status     string
+	StatusCode string
+	Message    string
 }
 
 // OutputChunk represents a chunk of job output.
@@ -252,7 +241,6 @@ func NewMockStreamResponseWriter() *MockStreamResponseWriter {
 			Jobs:           [][]*api.Job{},
 			ControlResults: []ControlResult{},
 			Networks:       []NetworkInfo{},
-			Clusters:       []launcher.ClusterOptions{},
 		},
 		Statuses:      []StatusUpdate{},
 		Outputs:       []OutputChunk{},
@@ -262,13 +250,15 @@ func NewMockStreamResponseWriter() *MockStreamResponseWriter {
 }
 
 // WriteJobStatus implements launcher.StreamResponseWriter.
-func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, status, msg string) error {
+func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, name, status, statusCode, msg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Statuses = append(m.Statuses, StatusUpdate{
-		ID:      id,
-		Status:  status,
-		Message: msg,
+		ID:         id,
+		Name:       name,
+		Status:     status,
+		StatusCode: statusCode,
+		Message:    msg,
 	})
 	return nil
 }
