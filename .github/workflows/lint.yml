@@ -45,7 +45,7 @@ jobs:
         go-version: '1.25'
 
     - name: Install just
-      uses: extractions/setup-just@v3
+      uses: extractions/setup-just@v4
 
     - name: Check formatting
       run: just fmt-check
