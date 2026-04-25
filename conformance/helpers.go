@@ -96,10 +96,11 @@ func ControlJob(p launcher.Plugin, user string, id api.JobID, op api.JobOperatio
 	if w.HasError() {
 		return nil, w.LastError()
 	}
-	if len(w.ControlResults) == 0 {
+	results := w.ControlResults()
+	if len(results) == 0 {
 		return nil, nil
 	}
-	return &w.ControlResults[0], nil
+	return &results[0], nil
 }
 
 // WaitForStatus polls p.GetJob until the job reaches the expected status

@@ -9,8 +9,9 @@ import (
 // AssertNoError asserts that no errors were written to the ResponseWriter.
 func AssertNoError(t *testing.T, w *MockResponseWriter) {
 	t.Helper()
-	if w.HasError() {
-		t.Errorf("expected no errors, but got %d error(s): %v", len(w.Errors), w.Errors)
+	errs := w.Errors()
+	if len(errs) > 0 {
+		t.Errorf("expected no errors, but got %d error(s): %v", len(errs), errs)
 	}
 }
 
@@ -30,14 +31,15 @@ func AssertErrorCode(t *testing.T, w *MockResponseWriter, code api.ErrCode) {
 		return
 	}
 	found := false
-	for _, err := range w.Errors {
+	errs := w.Errors()
+	for _, err := range errs {
 		if err.Code == code {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error with code %v, but got: %v", code, w.Errors)
+		t.Errorf("expected error with code %v, but got: %v", code, errs)
 	}
 }
 
@@ -49,14 +51,15 @@ func AssertErrorMessage(t *testing.T, w *MockResponseWriter, msg string) {
 		return
 	}
 	found := false
-	for _, err := range w.Errors {
+	errs := w.Errors()
+	for _, err := range errs {
 		if contains(err.Msg, msg) {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error containing %q, but got: %v", msg, w.Errors)
+		t.Errorf("expected error containing %q, but got: %v", msg, errs)
 	}
 }
 
@@ -124,7 +127,7 @@ func AssertJobExitCode(t *testing.T, job *api.Job, expected int) {
 // AssertStreamClosed asserts that Close() was called on a StreamResponseWriter.
 func AssertStreamClosed(t *testing.T, w *MockStreamResponseWriter) {
 	t.Helper()
-	if !w.Closed {
+	if !w.IsClosed() {
 		t.Error("expected stream to be closed, but Close() was not called")
 	}
 }
@@ -132,7 +135,7 @@ func AssertStreamClosed(t *testing.T, w *MockStreamResponseWriter) {
 // AssertStreamNotClosed asserts that Close() was not called on a StreamResponseWriter.
 func AssertStreamNotClosed(t *testing.T, w *MockStreamResponseWriter) {
 	t.Helper()
-	if w.Closed {
+	if w.IsClosed() {
 		t.Error("expected stream to be open, but Close() was called")
 	}
 }
@@ -158,11 +161,12 @@ func AssertOutputCount(t *testing.T, w *MockStreamResponseWriter, expected int) 
 // AssertControlComplete asserts that a control operation completed.
 func AssertControlComplete(t *testing.T, w *MockResponseWriter, expectedMsg string) {
 	t.Helper()
-	if len(w.ControlResults) == 0 {
+	results := w.ControlResults()
+	if len(results) == 0 {
 		t.Error("expected control result, but none was written")
 		return
 	}
-	result := w.ControlResults[len(w.ControlResults)-1]
+	result := results[len(results)-1]
 	if !result.Complete {
 		t.Error("expected control operation to be complete, but it was not")
 	}
@@ -174,11 +178,12 @@ func AssertControlComplete(t *testing.T, w *MockResponseWriter, expectedMsg stri
 // AssertControlIncomplete asserts that a control operation did not complete.
 func AssertControlIncomplete(t *testing.T, w *MockResponseWriter) {
 	t.Helper()
-	if len(w.ControlResults) == 0 {
+	results := w.ControlResults()
+	if len(results) == 0 {
 		t.Error("expected control result, but none was written")
 		return
 	}
-	result := w.ControlResults[len(w.ControlResults)-1]
+	result := results[len(results)-1]
 	if result.Complete {
 		t.Error("expected control operation to be incomplete, but it was complete")
 	}
