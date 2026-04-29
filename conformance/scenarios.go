@@ -81,7 +81,7 @@ func testLaunchWorkflow(t *testing.T, p launcher.Plugin, user string, profile *P
 		w := plugintest.NewMockResponseWriter()
 		p.ClusterInfo(context.Background(), w, user)
 		plugintest.AssertNoError(t, w)
-		if w.ClusterInfo == nil {
+		if w.ClusterInfo() == nil {
 			t.Error("ClusterInfo must return cluster configuration")
 		}
 	})

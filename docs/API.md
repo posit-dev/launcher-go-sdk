@@ -1172,7 +1172,7 @@ type MockResponseWriter struct {
 }
 ```
 
-Mock implementation of ResponseWriter that captures all responses.
+Mock implementation of `launcher.ResponseWriter` that captures all responses for test assertions. All state is private; observe captured values via the accessor methods, which are safe to call concurrently with `Write*` methods.
 
 #### Function: NewMockResponseWriter
 
@@ -1182,34 +1182,34 @@ func NewMockResponseWriter() *MockResponseWriter
 
 Creates a new MockResponseWriter.
 
-#### Method: WriteJobs
+#### Method: WriteErrorf
 
 ```go
-func (m *MockResponseWriter) WriteJobs(jobs []*api.Job)
+func (m *MockResponseWriter) WriteErrorf(code api.ErrCode, format string, a ...interface{}) error
 ```
 
-Records jobs that were written.
+Records an error built from a format string.
 
 #### Method: WriteError
 
 ```go
-func (m *MockResponseWriter) WriteError(err error)
+func (m *MockResponseWriter) WriteError(err error) error
 ```
 
-Records an error that was written.
+Records an error. Non-`*api.Error` values are recorded as `api.CodeUnknown`.
 
-#### Method: WriteErrorf
+#### Method: WriteJobs
 
 ```go
-func (m *MockResponseWriter) WriteErrorf(code int, format string, args ...interface{})
+func (m *MockResponseWriter) WriteJobs(jobs []*api.Job) error
 ```
 
-Records an error that was written.
+Records a job list as a single entry (each call appends one slice).
 
 #### Method: WriteControlJob
 
 ```go
-func (m *MockResponseWriter) WriteControlJob(success bool, message string)
+func (m *MockResponseWriter) WriteControlJob(complete bool, msg string) error
 ```
 
 Records a control operation result.
@@ -1217,18 +1217,34 @@ Records a control operation result.
 #### Method: WriteJobNetwork
 
 ```go
-func (m *MockResponseWriter) WriteJobNetwork(hostname string, ips []string)
+func (m *MockResponseWriter) WriteJobNetwork(host string, addr []string) error
 ```
 
-Records network information.
+Records job network information.
 
 #### Method: WriteClusterInfo
 
 ```go
-func (m *MockResponseWriter) WriteClusterInfo(info launcher.ClusterOptions)
+func (m *MockResponseWriter) WriteClusterInfo(opts launcher.ClusterOptions) error
 ```
 
-Records cluster information.
+Records the most recent cluster info response (overwrites prior calls).
+
+#### Method: WriteConfigReload
+
+```go
+func (m *MockResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error
+```
+
+Records a config reload result.
+
+#### Method: Errors
+
+```go
+func (m *MockResponseWriter) Errors() []*api.Error
+```
+
+Returns a defensive copy of every error written. Safe to read concurrently with `Write*` calls.
 
 #### Method: HasError
 
@@ -1246,13 +1262,21 @@ func (m *MockResponseWriter) LastError() *api.Error
 
 Returns the most recent error, or nil if none.
 
-#### Method: AllJobs
+#### Method: FirstError
 
 ```go
-func (m *MockResponseWriter) AllJobs() []*api.Job
+func (m *MockResponseWriter) FirstError() *api.Error
 ```
 
-Returns all jobs that were written.
+Returns the first error, or nil if none.
+
+#### Method: Jobs
+
+```go
+func (m *MockResponseWriter) Jobs() [][]*api.Job
+```
+
+Returns a defensive copy of every job slice captured by `WriteJobs`. Safe to read concurrently with `Write*` calls.
 
 #### Method: LastJobs
 
@@ -1260,7 +1284,47 @@ Returns all jobs that were written.
 func (m *MockResponseWriter) LastJobs() []*api.Job
 ```
 
-Returns the most recent set of jobs that were written.
+Returns the most recent job list, or nil if none.
+
+#### Method: AllJobs
+
+```go
+func (m *MockResponseWriter) AllJobs() []*api.Job
+```
+
+Returns every job from every `WriteJobs` call flattened into a single slice.
+
+#### Method: ControlResults
+
+```go
+func (m *MockResponseWriter) ControlResults() []ControlResult
+```
+
+Returns a defensive copy of every control result captured. Safe to read concurrently with `Write*` calls.
+
+#### Method: Networks
+
+```go
+func (m *MockResponseWriter) Networks() []NetworkInfo
+```
+
+Returns a defensive copy of every network response captured. Safe to read concurrently with `Write*` calls.
+
+#### Method: ClusterInfo
+
+```go
+func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions
+```
+
+Returns a defensive copy of the most recently captured cluster options, or nil if `WriteClusterInfo` has not been called. Safe to read concurrently with `Write*` calls.
+
+#### Method: ConfigReloadResults
+
+```go
+func (m *MockResponseWriter) ConfigReloadResults() []ConfigReloadResult
+```
+
+Returns a defensive copy of every config reload result captured. Safe to read concurrently with `Write*` calls.
 
 #### Method: Reset
 
@@ -1268,7 +1332,7 @@ Returns the most recent set of jobs that were written.
 func (m *MockResponseWriter) Reset()
 ```
 
-Clears all recorded data.
+Clears all captured responses.
 
 ### Type: MockStreamResponseWriter
 
@@ -1279,7 +1343,7 @@ type MockStreamResponseWriter struct {
 }
 ```
 
-Mock implementation of StreamResponseWriter.
+Mock implementation of `launcher.StreamResponseWriter` that captures all streaming responses for test assertions. State is shared with its embedded `MockResponseWriter` under a single mutex; observe captured values via the accessor methods.
 
 #### Function: NewMockStreamResponseWriter
 
@@ -1292,50 +1356,74 @@ Creates a new MockStreamResponseWriter.
 #### Method: WriteJobStatus
 
 ```go
-func (m *MockStreamResponseWriter) WriteJobStatus(job *api.Job)
+func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, name, status, statusCode, msg string) error
 ```
 
-Records a status update.
+Records a job status update.
 
 #### Method: WriteJobOutput
 
 ```go
-func (m *MockStreamResponseWriter) WriteJobOutput(output string, outputType api.JobOutput)
+func (m *MockStreamResponseWriter) WriteJobOutput(output string, outputType api.JobOutput) error
 ```
 
-Records output data.
+Records an output chunk.
 
 #### Method: WriteJobResourceUtil
 
 ```go
-func (m *MockStreamResponseWriter) WriteJobResourceUtil(cpu, cpuTime, resMem, virtMem float64)
+func (m *MockStreamResponseWriter) WriteJobResourceUtil(cpuPercent float64, cpuTime float64, residentMem float64, virtualMem float64) error
 ```
 
-Records resource utilization data.
+Records a resource utilization sample.
 
 #### Method: Close
 
 ```go
-func (m *MockStreamResponseWriter) Close()
+func (m *MockStreamResponseWriter) Close() error
 ```
 
 Marks the stream as closed.
 
-#### Method: IsClosed
+#### Method: Statuses
 
 ```go
-func (m *MockStreamResponseWriter) IsClosed() bool
+func (m *MockStreamResponseWriter) Statuses() []StatusUpdate
 ```
 
-Returns true if Close() was called.
+Returns a defensive copy of every status update captured. Safe to read concurrently with `Write*` calls.
 
-#### Method: AllStatuses
+#### Method: LastStatus
 
 ```go
-func (m *MockStreamResponseWriter) AllStatuses() []*api.Job
+func (m *MockStreamResponseWriter) LastStatus() *StatusUpdate
 ```
 
-Returns all status updates that were written.
+Returns the most recent status update, or nil if none.
+
+#### Method: StatusCount
+
+```go
+func (m *MockStreamResponseWriter) StatusCount() int
+```
+
+Returns the number of status updates written.
+
+#### Method: Outputs
+
+```go
+func (m *MockStreamResponseWriter) Outputs() []OutputChunk
+```
+
+Returns a defensive copy of every output chunk captured. Safe to read concurrently with `Write*` calls.
+
+#### Method: OutputCount
+
+```go
+func (m *MockStreamResponseWriter) OutputCount() int
+```
+
+Returns the number of output chunks written.
 
 #### Method: CombinedOutput
 
@@ -1343,15 +1431,110 @@ Returns all status updates that were written.
 func (m *MockStreamResponseWriter) CombinedOutput() string
 ```
 
-Returns all output data concatenated.
+Returns all output chunks concatenated into a single string.
 
-#### Method: AllResourceUtil
+#### Method: ResourceUtils
 
 ```go
-func (m *MockStreamResponseWriter) AllResourceUtil() []ResourceUtilData
+func (m *MockStreamResponseWriter) ResourceUtils() []ResourceUtilData
 ```
 
-Returns all resource utilization data points.
+Returns a defensive copy of every resource utilization sample captured. Safe to read concurrently with `Write*` calls.
+
+#### Method: IsClosed
+
+```go
+func (m *MockStreamResponseWriter) IsClosed() bool
+```
+
+Returns true if `Close` has been called.
+
+#### Method: ResetStream
+
+```go
+func (m *MockStreamResponseWriter) ResetStream()
+```
+
+Clears all streaming-specific captured responses.
+
+#### Method: Reset
+
+```go
+func (m *MockStreamResponseWriter) Reset()
+```
+
+Clears all captured responses, including those held by the embedded `MockResponseWriter`.
+
+### Type: ControlResult
+
+```go
+type ControlResult struct {
+    Complete bool
+    Message  string
+}
+```
+
+Captured result of a `WriteControlJob` call.
+
+### Type: NetworkInfo
+
+```go
+type NetworkInfo struct {
+    Host      string
+    Addresses []string
+}
+```
+
+Captured payload of a `WriteJobNetwork` call.
+
+### Type: ConfigReloadResult
+
+```go
+type ConfigReloadResult struct {
+    ErrorType    api.ConfigReloadErrorType
+    ErrorMessage string
+}
+```
+
+Captured payload of a `WriteConfigReload` call.
+
+### Type: StatusUpdate
+
+```go
+type StatusUpdate struct {
+    ID         api.JobID
+    Name       string
+    Status     string
+    StatusCode string
+    Message    string
+}
+```
+
+Captured payload of a `WriteJobStatus` call.
+
+### Type: OutputChunk
+
+```go
+type OutputChunk struct {
+    Output     string
+    OutputType api.JobOutput
+}
+```
+
+Captured payload of a `WriteJobOutput` call.
+
+### Type: ResourceUtilData
+
+```go
+type ResourceUtilData struct {
+    CPUPercent  float64
+    CPUTime     float64
+    ResidentMem float64
+    VirtualMem  float64
+}
+```
+
+Captured payload of a `WriteJobResourceUtil` call.
 
 ### Type: JobBuilder
 

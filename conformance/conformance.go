@@ -385,7 +385,7 @@ func testClusterInfoInvariants(t *testing.T, p launcher.Plugin, user string) {
 		w := plugintest.NewMockResponseWriter()
 		p.ClusterInfo(context.Background(), w, user)
 		plugintest.AssertNoError(t, w)
-		if w.ClusterInfo == nil {
+		if w.ClusterInfo() == nil {
 			t.Error("ClusterInfo must write cluster info")
 		}
 	})
@@ -393,10 +393,11 @@ func testClusterInfoInvariants(t *testing.T, p launcher.Plugin, user string) {
 	t.Run("LimitsHaveType", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
 		p.ClusterInfo(context.Background(), w, user)
-		if w.ClusterInfo == nil {
+		info := w.ClusterInfo()
+		if info == nil {
 			t.Skip("ClusterInfo not available")
 		}
-		for i, limit := range w.ClusterInfo.Limits {
+		for i, limit := range info.Limits {
 			if limit.Type == "" {
 				t.Errorf("resource limit at index %d has empty Type", i)
 			}

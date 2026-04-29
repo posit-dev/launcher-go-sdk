@@ -9,27 +9,18 @@ import (
 )
 
 // MockResponseWriter is a mock implementation of launcher.ResponseWriter that
-// captures all responses for test assertions.
+// captures all responses for test assertions. All state is private; observe
+// captured values via the accessor methods, which are safe to call
+// concurrently with Write* methods.
 type MockResponseWriter struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
-	// Errors contains all errors written via WriteError or WriteErrorf.
-	Errors []*api.Error
-
-	// Jobs contains all job lists written via WriteJobs.
-	Jobs [][]*api.Job
-
-	// ControlResults contains all control job results written via WriteControlJob.
-	ControlResults []ControlResult
-
-	// Networks contains all job network responses written via WriteJobNetwork.
-	Networks []NetworkInfo
-
-	// ClusterInfo contains the cluster info written via WriteClusterInfo.
-	ClusterInfo *launcher.ClusterOptions
-
-	// ConfigReloadResults contains all config reload responses written via WriteConfigReload.
-	ConfigReloadResults []ConfigReloadResult
+	errors              []*api.Error
+	jobs                [][]*api.Job
+	controlResults      []ControlResult
+	networks            []NetworkInfo
+	clusterInfo         *launcher.ClusterOptions
+	configReloadResults []ConfigReloadResult
 }
 
 // ControlResult represents a control job operation result.
@@ -44,14 +35,20 @@ type NetworkInfo struct {
 	Addresses []string
 }
 
+// ConfigReloadResult represents a config reload operation result.
+type ConfigReloadResult struct {
+	ErrorType    api.ConfigReloadErrorType
+	ErrorMessage string
+}
+
 // NewMockResponseWriter creates a new MockResponseWriter.
 func NewMockResponseWriter() *MockResponseWriter {
 	return &MockResponseWriter{
-		Errors:              []*api.Error{},
-		Jobs:                [][]*api.Job{},
-		ControlResults:      []ControlResult{},
-		Networks:            []NetworkInfo{},
-		ConfigReloadResults: []ConfigReloadResult{},
+		errors:              []*api.Error{},
+		jobs:                [][]*api.Job{},
+		controlResults:      []ControlResult{},
+		networks:            []NetworkInfo{},
+		configReloadResults: []ConfigReloadResult{},
 	}
 }
 
@@ -59,7 +56,7 @@ func NewMockResponseWriter() *MockResponseWriter {
 func (m *MockResponseWriter) WriteErrorf(code api.ErrCode, format string, a ...interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Errors = append(m.Errors, api.Errorf(code, format, a...))
+	m.errors = append(m.errors, api.Errorf(code, format, a...))
 	return nil
 }
 
@@ -69,9 +66,9 @@ func (m *MockResponseWriter) WriteError(err error) error {
 	defer m.mu.Unlock()
 	var apiErr *api.Error
 	if errors.As(err, &apiErr) {
-		m.Errors = append(m.Errors, apiErr)
+		m.errors = append(m.errors, apiErr)
 	} else {
-		m.Errors = append(m.Errors, &api.Error{Code: api.CodeUnknown, Msg: err.Error()})
+		m.errors = append(m.errors, &api.Error{Code: api.CodeUnknown, Msg: err.Error()})
 	}
 	return nil
 }
@@ -80,7 +77,7 @@ func (m *MockResponseWriter) WriteError(err error) error {
 func (m *MockResponseWriter) WriteJobs(jobs []*api.Job) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Jobs = append(m.Jobs, jobs)
+	m.jobs = append(m.jobs, jobs)
 	return nil
 }
 
@@ -88,7 +85,7 @@ func (m *MockResponseWriter) WriteJobs(jobs []*api.Job) error {
 func (m *MockResponseWriter) WriteControlJob(complete bool, msg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ControlResults = append(m.ControlResults, ControlResult{
+	m.controlResults = append(m.controlResults, ControlResult{
 		Complete: complete,
 		Message:  msg,
 	})
@@ -99,7 +96,7 @@ func (m *MockResponseWriter) WriteControlJob(complete bool, msg string) error {
 func (m *MockResponseWriter) WriteJobNetwork(host string, addr []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Networks = append(m.Networks, NetworkInfo{
+	m.networks = append(m.networks, NetworkInfo{
 		Host:      host,
 		Addresses: addr,
 	})
@@ -110,104 +107,151 @@ func (m *MockResponseWriter) WriteJobNetwork(host string, addr []string) error {
 func (m *MockResponseWriter) WriteClusterInfo(opts launcher.ClusterOptions) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ClusterInfo = &opts
+	m.clusterInfo = &opts
 	return nil
-}
-
-// ConfigReloadResult represents a config reload operation result.
-type ConfigReloadResult struct {
-	ErrorType    api.ConfigReloadErrorType
-	ErrorMessage string
 }
 
 // WriteConfigReload captures config reload responses for test assertions.
 func (m *MockResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ConfigReloadResults = append(m.ConfigReloadResults, ConfigReloadResult{
+	m.configReloadResults = append(m.configReloadResults, ConfigReloadResult{
 		ErrorType:    errorType,
 		ErrorMessage: errorMessage,
 	})
 	return nil
 }
 
+// Errors returns a copy of every error written to the writer.
+func (m *MockResponseWriter) Errors() []*api.Error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*api.Error, len(m.errors))
+	copy(out, m.errors)
+	return out
+}
+
 // HasError returns true if any errors were written.
 func (m *MockResponseWriter) HasError() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.Errors) > 0
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.errors) > 0
 }
 
 // LastError returns the most recent error, or nil if no errors were written.
 func (m *MockResponseWriter) LastError() *api.Error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.Errors) == 0 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.errors) == 0 {
 		return nil
 	}
-	return m.Errors[len(m.Errors)-1]
+	return m.errors[len(m.errors)-1]
 }
 
 // FirstError returns the first error, or nil if no errors were written.
 func (m *MockResponseWriter) FirstError() *api.Error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.Errors) == 0 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.errors) == 0 {
 		return nil
 	}
-	return m.Errors[0]
+	return m.errors[0]
+}
+
+// Jobs returns a copy of every job slice written via WriteJobs.
+// The outer slice is freshly allocated; the inner slices are shared with the
+// writer's recorded state (the mock never mutates already-recorded entries).
+func (m *MockResponseWriter) Jobs() [][]*api.Job {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([][]*api.Job, len(m.jobs))
+	copy(out, m.jobs)
+	return out
 }
 
 // LastJobs returns the most recent job list, or nil if no jobs were written.
 func (m *MockResponseWriter) LastJobs() []*api.Job {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.Jobs) == 0 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.jobs) == 0 {
 		return nil
 	}
-	return m.Jobs[len(m.Jobs)-1]
+	return m.jobs[len(m.jobs)-1]
 }
 
 // AllJobs returns all jobs from all WriteJobs calls, flattened into a single slice.
 func (m *MockResponseWriter) AllJobs() []*api.Job {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var all []*api.Job
-	for _, jobs := range m.Jobs {
+	for _, jobs := range m.jobs {
 		all = append(all, jobs...)
 	}
 	return all
+}
+
+// ControlResults returns a copy of every control result captured.
+func (m *MockResponseWriter) ControlResults() []ControlResult {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ControlResult, len(m.controlResults))
+	copy(out, m.controlResults)
+	return out
+}
+
+// Networks returns a copy of every network response captured.
+func (m *MockResponseWriter) Networks() []NetworkInfo {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]NetworkInfo, len(m.networks))
+	copy(out, m.networks)
+	return out
+}
+
+// ClusterInfo returns a copy of the most recently captured cluster options,
+// or nil if WriteClusterInfo has not been called.
+func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.clusterInfo == nil {
+		return nil
+	}
+	cp := *m.clusterInfo
+	return &cp
+}
+
+// ConfigReloadResults returns a copy of every config reload result captured.
+func (m *MockResponseWriter) ConfigReloadResults() []ConfigReloadResult {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ConfigReloadResult, len(m.configReloadResults))
+	copy(out, m.configReloadResults)
+	return out
 }
 
 // Reset clears all captured responses.
 func (m *MockResponseWriter) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Errors = []*api.Error{}
-	m.Jobs = [][]*api.Job{}
-	m.ControlResults = []ControlResult{}
-	m.Networks = []NetworkInfo{}
-	m.ClusterInfo = nil
-	m.ConfigReloadResults = []ConfigReloadResult{}
+	m.errors = []*api.Error{}
+	m.jobs = [][]*api.Job{}
+	m.controlResults = []ControlResult{}
+	m.networks = []NetworkInfo{}
+	m.clusterInfo = nil
+	m.configReloadResults = []ConfigReloadResult{}
 }
 
-// MockStreamResponseWriter is a mock implementation of launcher.StreamResponseWriter
-// that captures all streaming responses for test assertions.
+// MockStreamResponseWriter is a mock implementation of
+// launcher.StreamResponseWriter that captures all streaming responses for test
+// assertions. State is shared with its embedded MockResponseWriter under a
+// single mutex; all observation must use the accessor methods.
 type MockStreamResponseWriter struct {
 	MockResponseWriter
-	mu sync.Mutex
 
-	// Statuses contains all job status updates written via WriteJobStatus.
-	Statuses []StatusUpdate
-
-	// Outputs contains all output chunks written via WriteJobOutput.
-	Outputs []OutputChunk
-
-	// ResourceUtils contains all resource utilization data written via WriteJobResourceUtil.
-	ResourceUtils []ResourceUtilData
-
-	// Closed indicates whether Close() was called.
-	Closed bool
+	statuses      []StatusUpdate
+	outputs       []OutputChunk
+	resourceUtils []ResourceUtilData
+	closed        bool
 }
 
 // StatusUpdate represents a job status update.
@@ -237,15 +281,16 @@ type ResourceUtilData struct {
 func NewMockStreamResponseWriter() *MockStreamResponseWriter {
 	return &MockStreamResponseWriter{
 		MockResponseWriter: MockResponseWriter{
-			Errors:         []*api.Error{},
-			Jobs:           [][]*api.Job{},
-			ControlResults: []ControlResult{},
-			Networks:       []NetworkInfo{},
+			errors:              []*api.Error{},
+			jobs:                [][]*api.Job{},
+			controlResults:      []ControlResult{},
+			networks:            []NetworkInfo{},
+			configReloadResults: []ConfigReloadResult{},
 		},
-		Statuses:      []StatusUpdate{},
-		Outputs:       []OutputChunk{},
-		ResourceUtils: []ResourceUtilData{},
-		Closed:        false,
+		statuses:      []StatusUpdate{},
+		outputs:       []OutputChunk{},
+		resourceUtils: []ResourceUtilData{},
+		closed:        false,
 	}
 }
 
@@ -253,7 +298,7 @@ func NewMockStreamResponseWriter() *MockStreamResponseWriter {
 func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, name, status, statusCode, msg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Statuses = append(m.Statuses, StatusUpdate{
+	m.statuses = append(m.statuses, StatusUpdate{
 		ID:         id,
 		Name:       name,
 		Status:     status,
@@ -267,7 +312,7 @@ func (m *MockStreamResponseWriter) WriteJobStatus(id api.JobID, name, status, st
 func (m *MockStreamResponseWriter) WriteJobOutput(output string, outputType api.JobOutput) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Outputs = append(m.Outputs, OutputChunk{
+	m.outputs = append(m.outputs, OutputChunk{
 		Output:     output,
 		OutputType: outputType,
 	})
@@ -279,7 +324,7 @@ func (m *MockStreamResponseWriter) WriteJobResourceUtil(cpuPercent float64, cpuT
 	residentMem float64, virtualMem float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ResourceUtils = append(m.ResourceUtils, ResourceUtilData{
+	m.resourceUtils = append(m.resourceUtils, ResourceUtilData{
 		CPUPercent:  cpuPercent,
 		CPUTime:     cpuTime,
 		ResidentMem: residentMem,
@@ -292,53 +337,88 @@ func (m *MockStreamResponseWriter) WriteJobResourceUtil(cpuPercent float64, cpuT
 func (m *MockStreamResponseWriter) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Closed = true
+	m.closed = true
 	return nil
+}
+
+// Statuses returns a copy of every status update captured.
+func (m *MockStreamResponseWriter) Statuses() []StatusUpdate {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]StatusUpdate, len(m.statuses))
+	copy(out, m.statuses)
+	return out
 }
 
 // LastStatus returns the most recent status update, or nil if no statuses were written.
 func (m *MockStreamResponseWriter) LastStatus() *StatusUpdate {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.Statuses) == 0 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.statuses) == 0 {
 		return nil
 	}
-	return &m.Statuses[len(m.Statuses)-1]
+	cp := m.statuses[len(m.statuses)-1]
+	return &cp
 }
 
 // StatusCount returns the number of status updates written.
 func (m *MockStreamResponseWriter) StatusCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.Statuses)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.statuses)
+}
+
+// Outputs returns a copy of every output chunk captured.
+func (m *MockStreamResponseWriter) Outputs() []OutputChunk {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]OutputChunk, len(m.outputs))
+	copy(out, m.outputs)
+	return out
 }
 
 // OutputCount returns the number of output chunks written.
 func (m *MockStreamResponseWriter) OutputCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.Outputs)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.outputs)
 }
 
 // CombinedOutput returns all output chunks concatenated into a single string.
 func (m *MockStreamResponseWriter) CombinedOutput() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var combined string
-	for _, chunk := range m.Outputs {
+	for _, chunk := range m.outputs {
 		combined += chunk.Output
 	}
 	return combined
+}
+
+// ResourceUtils returns a copy of every resource utilization sample captured.
+func (m *MockStreamResponseWriter) ResourceUtils() []ResourceUtilData {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ResourceUtilData, len(m.resourceUtils))
+	copy(out, m.resourceUtils)
+	return out
+}
+
+// IsClosed reports whether Close has been called.
+func (m *MockStreamResponseWriter) IsClosed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
 }
 
 // ResetStream clears all streaming-specific captured responses.
 func (m *MockStreamResponseWriter) ResetStream() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Statuses = []StatusUpdate{}
-	m.Outputs = []OutputChunk{}
-	m.ResourceUtils = []ResourceUtilData{}
-	m.Closed = false
+	m.statuses = []StatusUpdate{}
+	m.outputs = []OutputChunk{}
+	m.resourceUtils = []ResourceUtilData{}
+	m.closed = false
 }
 
 // Reset clears all captured responses including base MockResponseWriter.

@@ -154,7 +154,7 @@ func TestMockResponseWriter(t *testing.T) {
 
 		w.WriteClusterInfo(opts)
 
-		if w.ClusterInfo == nil {
+		if w.ClusterInfo() == nil {
 			t.Error("expected cluster info to be captured")
 		}
 	})
@@ -210,8 +210,8 @@ func TestMockStreamResponseWriter(t *testing.T) {
 
 		w.WriteJobResourceUtil(50.0, 100.0, 1024.0, 2048.0)
 
-		if len(w.ResourceUtils) != 1 {
-			t.Errorf("expected 1 resource util entry, got %d", len(w.ResourceUtils))
+		if got := len(w.ResourceUtils()); got != 1 {
+			t.Errorf("expected 1 resource util entry, got %d", got)
 		}
 	})
 
