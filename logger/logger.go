@@ -88,19 +88,13 @@ func (h *workbenchHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 // Handle handles a [slog.Record].
 func (h *workbenchHandler) Handle(_ context.Context, r slog.Record) error {
-	group := strings.Join(append(h.groups, ""), ".")
+	prefix := strings.Join(append(h.groups, ""), ".")
 	var props []string
 	for _, attr := range h.attrs {
-		formatted := formatAttr(group, attr)
-		if formatted != "" {
-			props = append(props, formatted)
-		}
+		props = appendAttr(props, prefix, attr)
 	}
 	r.Attrs(func(attr slog.Attr) bool {
-		formatted := formatAttr(group, attr)
-		if formatted != "" {
-			props = append(props, formatted)
-		}
+		props = appendAttr(props, prefix, attr)
 		return true
 	})
 	propStr := ""
@@ -140,27 +134,65 @@ func (h *workbenchHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-func formatAttr(group string, attr slog.Attr) string {
-	prefix := group + attr.Key + ": "
+// appendAttr appends formatted leaf entries for attr to props. prefix is
+// the dotted key prefix accumulated from enclosing groups; it is either
+// empty or ends in ".". Handle establishes this invariant; appendAttr
+// preserves it when building childPrefix. Group values are walked
+// recursively, extending the prefix; an empty key on a group inlines its
+// children at the current prefix; empty groups are omitted entirely.
+func appendAttr(props []string, prefix string, attr slog.Attr) []string {
 	value := attr.Value.Resolve()
-	switch value.Kind() {
-	case slog.KindBool:
-		if value.Bool() {
-			return prefix + "true"
+	if value.Kind() == slog.KindGroup {
+		children := value.Group()
+		if len(children) == 0 {
+			return props
 		}
-		return prefix + "false"
+		childPrefix := prefix
+		if attr.Key != "" {
+			childPrefix = prefix + attr.Key + "."
+		}
+		for _, c := range children {
+			props = appendAttr(props, childPrefix, c)
+		}
+		return props
+	}
+	if attr.Equal(slog.Attr{}) {
+		return props
+	}
+	if attr.Key == "" {
+		return props
+	}
+	return append(props, prefix+attr.Key+": "+formatValue(value))
+}
+
+// formatValue renders a resolved scalar [slog.Value] for the Workbench log
+// format. The caller is responsible for routing group values through
+// appendAttr; this function does not handle KindGroup.
+func formatValue(v slog.Value) string {
+	switch v.Kind() {
+	case slog.KindBool:
+		if v.Bool() {
+			return "true"
+		}
+		return "false"
 	case slog.KindString, slog.KindFloat64, slog.KindInt64, slog.KindUint64,
 		slog.KindDuration, slog.KindTime:
-		return prefix + value.String()
+		return v.String()
 	case slog.KindAny:
-		if err, ok := value.Any().(error); ok {
-			return prefix + err.Error()
+		if err, ok := v.Any().(error); ok {
+			return err.Error()
 		}
-		fallthrough
+		return v.String()
 	case slog.KindGroup, slog.KindLogValuer:
-		return ""
+		// Unreachable in normal operation: appendAttr calls Resolve()
+		// before dispatching, which exhausts KindLogValuer wrappers, and
+		// routes KindGroup values through its own recursion. Neither kind
+		// reaches formatValue under normal use. Defensive only.
+		return v.String()
 	}
-	return ""
+	// Unreachable: the switch covers every slog.Kind. Required by the Go
+	// compiler because the switch has no default arm.
+	return v.String()
 }
 
 const timestampFormat = "2006-01-02T15:04:05.000000Z"
