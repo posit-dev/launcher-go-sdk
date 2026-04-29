@@ -415,18 +415,16 @@ func (p *MyPlugin) GetJobOutput(ctx context.Context,
         return
     }
 
-    // Stream output in a goroutine
-    go func() {
-        // Read from output file or tail logs
-        for {
-            select {
-            case <-ctx.Done():
-                return
-            case line := <-outputChannel:
-                w.WriteJobOutput(line, outputType)
-            }
+    // Stream output. The SDK already dispatches each handler in its
+    // own goroutine, so it is safe to block here.
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case line := <-outputChannel:
+            w.WriteJobOutput(line, outputType)
         }
-    }()
+    }
 }
 ```
 
