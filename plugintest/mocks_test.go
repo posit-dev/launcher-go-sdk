@@ -169,8 +169,20 @@ func TestMockResponseWriter_DefensiveCopies(t *testing.T) {
 	nets := w.Networks()
 	nets = append(nets, plugintest.NetworkInfo{Host: "leak"})
 	nets[0].Host = "rewritten"
-	if again := w.Networks(); len(again) != 1 || again[0].Host != "host" {
+	nets[0].Addresses[0] = "9.9.9.9" // element-level mutation of the inner []string
+	if again := w.Networks(); len(again) != 1 || again[0].Host != "host" ||
+		len(again[0].Addresses) != 1 || again[0].Addresses[0] != "1.2.3.4" {
 		t.Errorf("Networks() leaked mutation: %+v", again)
+	}
+
+	// LastJobs returns a freshly allocated slice header; append must not leak.
+	last := w.LastJobs()
+	last = append(last, &api.Job{ID: "leak"})
+	if len(last) != 2 {
+		t.Fatalf("local append did not extend LastJobs slice: len=%d", len(last))
+	}
+	if again := w.LastJobs(); len(again) != 1 {
+		t.Errorf("LastJobs() leaked outer mutation: len=%d", len(again))
 	}
 
 	reloads := w.ConfigReloadResults()
@@ -211,11 +223,23 @@ func TestMockStreamResponseWriter_DefensiveCopies(t *testing.T) {
 	}
 }
 
-// TestMockResponseWriter_ClusterInfoIsCopied verifies that ClusterInfo()
-// returns a copy that does not alias the writer's stored state.
-func TestMockResponseWriter_ClusterInfoIsCopied(t *testing.T) {
+// TestMockResponseWriter_ClusterInfoIsDeepCopied verifies that ClusterInfo()
+// returns a deep copy: the returned pointer, its slice fields, the nested
+// ImageOpt.Images slice, and each ResourceProfile's inner Limits slice are
+// all freshly allocated, so caller mutation at any level does not leak into
+// the writer's stored state.
+func TestMockResponseWriter_ClusterInfoIsDeepCopied(t *testing.T) {
 	w := plugintest.NewMockResponseWriter()
-	opts := plugintest.NewClusterOptions().WithQueue("default").Build()
+	opts := plugintest.NewClusterOptions().
+		WithQueue("default").
+		WithLimit("cpuCount", "4").
+		WithImage("ubuntu:24.04").
+		Build()
+	// Add a profile with its own nested Limits so we exercise the nested clone.
+	opts.Profiles = []api.ResourceProfile{{
+		Name:   "small",
+		Limits: []api.ResourceLimit{{Type: "memory", Value: "1Gi"}},
+	}}
 	if err := w.WriteClusterInfo(opts); err != nil {
 		t.Fatalf("WriteClusterInfo: %v", err)
 	}
@@ -223,12 +247,33 @@ func TestMockResponseWriter_ClusterInfoIsCopied(t *testing.T) {
 	got := w.ClusterInfo()
 	if got == nil {
 		t.Fatal("ClusterInfo() returned nil")
+		return // unreachable, but satisfies staticcheck SA5011
 	}
-	got.Queues = nil // mutate the returned value
+
+	// Mutate every slice the contract promises to deep-copy.
+	got.Queues = nil
+	got.Limits[0].Value = "rewritten"
+	got.Limits = append(got.Limits, api.ResourceLimit{Type: "leak"})
+	got.ImageOpt.Images[0] = "rewritten"
+	got.Profiles[0].Limits[0].Value = "rewritten"
 
 	again := w.ClusterInfo()
-	if again == nil || len(again.Queues) == 0 {
-		t.Errorf("ClusterInfo() leaked mutation: %+v", again)
+	if again == nil {
+		t.Fatal("ClusterInfo() returned nil on second call")
+		return // unreachable, but satisfies staticcheck SA5011
+	}
+	if len(again.Queues) != 1 || again.Queues[0] != "default" {
+		t.Errorf("ClusterInfo() Queues leaked: %+v", again.Queues)
+	}
+	if len(again.Limits) != 1 || again.Limits[0].Value != "4" {
+		t.Errorf("ClusterInfo() Limits leaked: %+v", again.Limits)
+	}
+	if len(again.ImageOpt.Images) != 1 || again.ImageOpt.Images[0] != "ubuntu:24.04" {
+		t.Errorf("ClusterInfo() ImageOpt.Images leaked: %+v", again.ImageOpt.Images)
+	}
+	if len(again.Profiles) != 1 || len(again.Profiles[0].Limits) != 1 ||
+		again.Profiles[0].Limits[0].Value != "1Gi" {
+		t.Errorf("ClusterInfo() Profiles[0].Limits leaked: %+v", again.Profiles)
 	}
 }
 

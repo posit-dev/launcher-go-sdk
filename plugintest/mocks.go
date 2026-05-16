@@ -2,6 +2,7 @@ package plugintest
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
@@ -9,9 +10,19 @@ import (
 )
 
 // MockResponseWriter is a mock implementation of launcher.ResponseWriter that
-// captures all responses for test assertions. All state is private; observe
-// captured values via the accessor methods, which are safe to call
-// concurrently with Write* methods.
+// captures all responses for test assertions.
+//
+// All accessor methods are safe to call concurrently with Write* methods.
+// They return snapshots taken under a read lock; the writer does not
+// subsequently mutate recorded entries. The returned slice headers (and,
+// for accessors that return value-typed elements such as ControlResults,
+// the elements themselves) are independent of the writer's stored state
+// and may be freely mutated by the caller.
+//
+// Pointer-typed elements such as *api.Error and *api.Job, and slice
+// fields inside value-typed elements that are not explicitly noted as
+// deep-copied, alias the writer's stored values. Treat them as read-only.
+// Accessors that DO return a deep copy say so explicitly in their godoc.
 type MockResponseWriter struct {
 	mu sync.RWMutex
 
@@ -122,13 +133,12 @@ func (m *MockResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorTy
 	return nil
 }
 
-// Errors returns a copy of every error written to the writer.
+// Errors returns a snapshot slice of every error written. The *api.Error
+// elements alias the writer's stored entries; treat them as read-only.
 func (m *MockResponseWriter) Errors() []*api.Error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]*api.Error, len(m.errors))
-	copy(out, m.errors)
-	return out
+	return slices.Clone(m.errors)
 }
 
 // HasError returns true if any errors were written.
@@ -139,6 +149,7 @@ func (m *MockResponseWriter) HasError() bool {
 }
 
 // LastError returns the most recent error, or nil if no errors were written.
+// The returned *api.Error aliases the writer's stored entry; treat as read-only.
 func (m *MockResponseWriter) LastError() *api.Error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -149,6 +160,7 @@ func (m *MockResponseWriter) LastError() *api.Error {
 }
 
 // FirstError returns the first error, or nil if no errors were written.
+// The returned *api.Error aliases the writer's stored entry; treat as read-only.
 func (m *MockResponseWriter) FirstError() *api.Error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -158,28 +170,35 @@ func (m *MockResponseWriter) FirstError() *api.Error {
 	return m.errors[0]
 }
 
-// Jobs returns a copy of every job slice written via WriteJobs.
-// The outer slice is freshly allocated; the inner slices are shared with the
-// writer's recorded state (the mock never mutates already-recorded entries).
+// Jobs returns a snapshot of every job batch written via WriteJobs. The outer
+// slice and each inner []*api.Job slice header are freshly allocated, so
+// callers may freely append or reorder. The *api.Job elements within those
+// inner slices alias the writer's stored entries; treat them as read-only.
 func (m *MockResponseWriter) Jobs() [][]*api.Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([][]*api.Job, len(m.jobs))
-	copy(out, m.jobs)
+	for i, batch := range m.jobs {
+		out[i] = slices.Clone(batch)
+	}
 	return out
 }
 
-// LastJobs returns the most recent job list, or nil if no jobs were written.
+// LastJobs returns a snapshot slice of the most recently written job batch,
+// or nil if no jobs were written. The *api.Job elements alias the writer's
+// stored entries; treat them as read-only.
 func (m *MockResponseWriter) LastJobs() []*api.Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if len(m.jobs) == 0 {
 		return nil
 	}
-	return m.jobs[len(m.jobs)-1]
+	return slices.Clone(m.jobs[len(m.jobs)-1])
 }
 
-// AllJobs returns all jobs from all WriteJobs calls, flattened into a single slice.
+// AllJobs returns a snapshot slice of every job from every WriteJobs call,
+// flattened in insertion order. The *api.Job elements alias the writer's
+// stored entries; treat them as read-only.
 func (m *MockResponseWriter) AllJobs() []*api.Job {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -190,26 +209,35 @@ func (m *MockResponseWriter) AllJobs() []*api.Job {
 	return all
 }
 
-// ControlResults returns a copy of every control result captured.
+// ControlResults returns a snapshot slice of every control result captured.
+// The slice and its value-typed elements are independent of the writer.
 func (m *MockResponseWriter) ControlResults() []ControlResult {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]ControlResult, len(m.controlResults))
-	copy(out, m.controlResults)
-	return out
+	return slices.Clone(m.controlResults)
 }
 
-// Networks returns a copy of every network response captured.
+// Networks returns a deep-copy snapshot of every network response captured.
+// Each entry's Addresses slice is freshly allocated, so callers may freely
+// mutate both the outer slice and the per-entry Addresses.
 func (m *MockResponseWriter) Networks() []NetworkInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]NetworkInfo, len(m.networks))
-	copy(out, m.networks)
+	for i, n := range m.networks {
+		out[i] = NetworkInfo{
+			Host:      n.Host,
+			Addresses: slices.Clone(n.Addresses),
+		}
+	}
 	return out
 }
 
-// ClusterInfo returns a copy of the most recently captured cluster options,
-// or nil if WriteClusterInfo has not been called.
+// ClusterInfo returns a deep-copy snapshot of the most recently captured
+// cluster options, or nil if WriteClusterInfo has not been called. The
+// returned pointer, its slice fields (Constraints, Queues, Limits, Configs,
+// Profiles), the nested ImageOpt.Images slice, and each ResourceProfile's
+// inner Limits slice are all freshly allocated.
 func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -217,16 +245,25 @@ func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions {
 		return nil
 	}
 	cp := *m.clusterInfo
+	cp.Constraints = slices.Clone(m.clusterInfo.Constraints)
+	cp.Queues = slices.Clone(m.clusterInfo.Queues)
+	cp.Limits = slices.Clone(m.clusterInfo.Limits)
+	cp.Configs = slices.Clone(m.clusterInfo.Configs)
+	cp.Profiles = slices.Clone(m.clusterInfo.Profiles)
+	for i := range cp.Profiles {
+		cp.Profiles[i].Limits = slices.Clone(cp.Profiles[i].Limits)
+	}
+	cp.ImageOpt.Images = slices.Clone(m.clusterInfo.ImageOpt.Images)
 	return &cp
 }
 
-// ConfigReloadResults returns a copy of every config reload result captured.
+// ConfigReloadResults returns a snapshot slice of every config reload result
+// captured. The slice and its value-typed elements are independent of the
+// writer.
 func (m *MockResponseWriter) ConfigReloadResults() []ConfigReloadResult {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]ConfigReloadResult, len(m.configReloadResults))
-	copy(out, m.configReloadResults)
-	return out
+	return slices.Clone(m.configReloadResults)
 }
 
 // Reset clears all captured responses.
@@ -242,9 +279,13 @@ func (m *MockResponseWriter) Reset() {
 }
 
 // MockStreamResponseWriter is a mock implementation of
-// launcher.StreamResponseWriter that captures all streaming responses for test
-// assertions. State is shared with its embedded MockResponseWriter under a
-// single mutex; all observation must use the accessor methods.
+// launcher.StreamResponseWriter that captures all streaming responses for
+// test assertions. State is shared with the embedded MockResponseWriter
+// under a single mutex (this writer intentionally does not declare its own).
+// The aliasing contract documented on MockResponseWriter applies here too;
+// the StatusUpdate, OutputChunk, and ResourceUtilData element types are
+// pure value types so the stream-only accessors return fully independent
+// snapshots.
 type MockStreamResponseWriter struct {
 	MockResponseWriter
 
@@ -341,13 +382,12 @@ func (m *MockStreamResponseWriter) Close() error {
 	return nil
 }
 
-// Statuses returns a copy of every status update captured.
+// Statuses returns a snapshot slice of every status update captured. The
+// slice and its value-typed elements are independent of the writer.
 func (m *MockStreamResponseWriter) Statuses() []StatusUpdate {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]StatusUpdate, len(m.statuses))
-	copy(out, m.statuses)
-	return out
+	return slices.Clone(m.statuses)
 }
 
 // LastStatus returns the most recent status update, or nil if no statuses were written.
@@ -368,13 +408,12 @@ func (m *MockStreamResponseWriter) StatusCount() int {
 	return len(m.statuses)
 }
 
-// Outputs returns a copy of every output chunk captured.
+// Outputs returns a snapshot slice of every output chunk captured. The slice
+// and its value-typed elements are independent of the writer.
 func (m *MockStreamResponseWriter) Outputs() []OutputChunk {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]OutputChunk, len(m.outputs))
-	copy(out, m.outputs)
-	return out
+	return slices.Clone(m.outputs)
 }
 
 // OutputCount returns the number of output chunks written.
@@ -395,13 +434,13 @@ func (m *MockStreamResponseWriter) CombinedOutput() string {
 	return combined
 }
 
-// ResourceUtils returns a copy of every resource utilization sample captured.
+// ResourceUtils returns a snapshot slice of every resource utilization
+// sample captured. The slice and its value-typed elements are independent
+// of the writer.
 func (m *MockStreamResponseWriter) ResourceUtils() []ResourceUtilData {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]ResourceUtilData, len(m.resourceUtils))
-	copy(out, m.resourceUtils)
-	return out
+	return slices.Clone(m.resourceUtils)
 }
 
 // IsClosed reports whether Close has been called.

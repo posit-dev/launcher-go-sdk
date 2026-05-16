@@ -396,6 +396,7 @@ func testClusterInfoInvariants(t *testing.T, p launcher.Plugin, user string) {
 		info := w.ClusterInfo()
 		if info == nil {
 			t.Skip("ClusterInfo not available")
+			return
 		}
 		for i, limit := range info.Limits {
 			if limit.Type == "" {
