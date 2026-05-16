@@ -247,7 +247,11 @@ func TestIssue15Reproducer(t *testing.T) {
 	}
 	t.Logf("captured output:\n%s", output)
 
-	for _, want := range []string{"11", "alice", "42", "bob", "99", "carmen"} {
+	for _, want := range []string{
+		"id: 11", "user: alice",
+		"job.id: 42", "job.user: bob",
+		"job.id: 99", "job.user: carmen",
+	} {
 		if !strings.Contains(string(output), want) {
 			t.Errorf("field %q is missing from log output", want)
 		}
