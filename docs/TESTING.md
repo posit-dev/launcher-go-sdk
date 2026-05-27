@@ -527,15 +527,16 @@ func TestClusterInfo(t *testing.T) {
     plugintest.AssertNoError(t, w)
 
     // Check cluster info fields
-    if w.ClusterInfo == nil {
+    info := w.ClusterInfo()
+    if info == nil {
         t.Fatal("ClusterInfo was not set")
     }
 
-    if len(w.ClusterInfo.Queues) == 0 {
+    if len(info.Queues) == 0 {
         t.Error("Expected at least one queue")
     }
 
-    if w.ClusterInfo.DefaultQueue == "" {
+    if info.DefaultQueue == "" {
         t.Error("Default queue should be set")
     }
 }
