@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -87,8 +88,21 @@ type DefaultOptions struct {
 // AddFlags implements Options and exposes the default plugin options as
 // command-line flags.
 func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
-	f.BoolVar(&o.Debug, "enable-debug-logging", false,
-		"whether to enable debug logging or not - if true, enforces a log-level of at least DEBUG")
+	// The launcher always passes "--enable-debug-logging 0" or "--enable-debug-logging 1"
+	// (space-separated, never "="-joined). flag.BoolVar registers bool flags as
+	// optionally-valued: the bare flag name sets the bool to true without consuming
+	// the next token, so "0"/"1" becomes a stray non-flag argument that halts
+	// parsing of all later flags. flag.Func always consumes the next token as its
+	// value, fixing both problems.
+	f.Func("enable-debug-logging", "whether to enable debug logging or not - if true, enforces a log-level of at least DEBUG",
+		func(s string) error {
+			b, err := strconv.ParseBool(s)
+			if err != nil {
+				return err
+			}
+			o.Debug = b
+			return nil
+		})
 	f.UintVar(&o.jobExpiryHours, "job-expiry-hours", uint(24),
 		"amount of hours before completed jobs are removed from the system")
 	// Set by Launcher but not used by any (known) plugin. If the upstream
