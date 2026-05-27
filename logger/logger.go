@@ -103,7 +103,7 @@ func (h *workbenchHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 	_, err := fmt.Fprintf(h.sink, "%s [%s] %s %s%s\n",
 		r.Time.Format(timestampFormat), h.programID,
-		r.Level.String(), r.Message, propStr)
+		levelString(r.Level), r.Message, propStr)
 	return err
 }
 
@@ -193,6 +193,15 @@ func formatValue(v slog.Value) string {
 	// Unreachable: the switch covers every slog.Kind. Required by the Go
 	// compiler because the switch has no default arm.
 	return v.String()
+}
+
+// levelString maps a [slog.Level] to the level token expected by the Workbench
+// launcher. slog uses "WARN"; the launcher requires "WARNING".
+func levelString(level slog.Level) string {
+	if level == slog.LevelWarn {
+		return "WARNING"
+	}
+	return level.String()
 }
 
 const timestampFormat = "2006-01-02T15:04:05.000000Z"

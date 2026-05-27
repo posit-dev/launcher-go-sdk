@@ -2,6 +2,7 @@ package logger
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -248,6 +249,7 @@ func TestIssue15Reproducer(t *testing.T) {
 	t.Logf("captured output:\n%s", output)
 
 	for _, want := range []string{
+		" WARNING ",
 		"id: 11", "user: alice",
 		"job.id: 42", "job.user: bob",
 		"job.id: 99", "job.user: carmen",
@@ -324,5 +326,32 @@ func TestHandleLogValuerScalar(t *testing.T) {
 	props := extractProps(buf.String())
 	if len(props) != 1 || props[0] != "status: foo" {
 		t.Errorf("got %v, want [\"status: foo\"]", props)
+	}
+}
+
+// TestLevelTokens verifies that each standard slog level maps to the token
+// expected by the Workbench launcher. In particular, slog.LevelWarn.String()
+// returns "WARN" but the launcher requires "WARNING"; unrecognized tokens are
+// silently demoted to DEBUG (issue #25).
+func TestLevelTokens(t *testing.T) {
+	cases := []struct {
+		level slog.Level
+		want  string
+	}{
+		{slog.LevelDebug, "DEBUG"},
+		{slog.LevelInfo, "INFO"},
+		{slog.LevelWarn, "WARNING"},
+		{slog.LevelError, "ERROR"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.want, func(t *testing.T) {
+			lgr, buf := newBufferLogger(t)
+			lgr.Log(context.Background(), tc.level, "check level")
+			line := buf.String()
+			token := " " + tc.want + " "
+			if !strings.Contains(line, token) {
+				t.Errorf("want %q in log line, got: %q", token, line)
+			}
+		})
 	}
 }
