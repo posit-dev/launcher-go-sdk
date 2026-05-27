@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log/slog"
 	"testing"
@@ -11,6 +12,54 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
 )
+
+// TestDefaultOptions_EnableDebugLogging verifies that --enable-debug-logging
+// consumes its value argument so that subsequent flags are not silently dropped.
+// The launcher passes "--enable-debug-logging 0" (space-separated), which
+// flag.BoolVar does not handle: the bare flag name sets Debug to true without
+// consuming the next token, so "0" becomes a stray non-flag argument that halts
+// parsing of all later flags.
+func TestDefaultOptions_EnableDebugLogging(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantDebug bool
+		wantErr   bool
+	}{
+		{"space-sep-0", []string{"--enable-debug-logging", "0", "--plugin-name", "myplugin"}, false, false},
+		{"space-sep-1", []string{"--enable-debug-logging", "1", "--plugin-name", "myplugin"}, true, false},
+		{"equals-false", []string{"--enable-debug-logging=false", "--plugin-name", "myplugin"}, false, false},
+		{"equals-true", []string{"--enable-debug-logging=true", "--plugin-name", "myplugin"}, true, false},
+		{"absent", []string{"--plugin-name", "myplugin"}, false, false},
+		{"invalid-value", []string{"--enable-debug-logging", "maybe", "--plugin-name", "myplugin"}, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var opts DefaultOptions
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			opts.AddFlags(fs, "default")
+			err := fs.Parse(tt.args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Parse() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if fs.NArg() != 0 {
+				t.Errorf("unparsed args = %v, want none", fs.Args())
+			}
+			if opts.Debug != tt.wantDebug {
+				t.Errorf("Debug = %v, want %v", opts.Debug, tt.wantDebug)
+			}
+			if opts.PluginName != "myplugin" {
+				t.Errorf("PluginName = %q, want %q", opts.PluginName, "myplugin")
+			}
+		})
+	}
+}
 
 // stubPlugin implements Plugin with no-op methods.
 type stubPlugin struct{}
