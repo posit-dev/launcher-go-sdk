@@ -6,13 +6,14 @@ This guide shows how to test launcher plugins using the SDK's testing utilities.
 
 1. [Overview](#overview)
 2. [Conformance Testing](#conformance-testing)
-3. [Testing Utilities](#testing-utilities)
-4. [Unit Testing](#unit-testing)
-5. [Integration Testing](#integration-testing)
-6. [Testing Patterns](#testing-patterns)
-7. [Coverage](#coverage)
-8. [Best Practices](#best-practices)
-9. [Common Scenarios](#common-scenarios)
+3. [Manual Smoke Testing](#manual-smoke-testing)
+4. [Testing Utilities](#testing-utilities)
+5. [Unit Testing](#unit-testing)
+6. [Integration Testing](#integration-testing)
+7. [Testing Patterns](#testing-patterns)
+8. [Coverage](#coverage)
+9. [Best Practices](#best-practices)
+10. [Common Scenarios](#common-scenarios)
 
 ## Overview
 
@@ -147,6 +148,56 @@ sw, done := conformance.CollectStatusStream(ctx, plugin, "testuser")
 cancel()
 <-done // wait for goroutine to exit
 ```
+
+## Manual smoke testing
+
+The `cmd/smoketest` utility is an interactive CLI that speaks the Launcher Plugin API protocol directly, letting you drive a compiled plugin binary through all API operations without a running Workbench or Launcher instance.
+
+**When to use it:** When you want to manually explore or sanity-check a real plugin binary. It is not a substitute for automated conformance tests.
+
+### Running the smoke test
+
+Build the plugin binary you want to test, then run:
+
+```bash
+go run github.com/posit-dev/launcher-go-sdk/cmd/smoketest <path/to/plugin> <username>
+```
+
+Or install it once and reuse:
+
+```bash
+go install github.com/posit-dev/launcher-go-sdk/cmd/smoketest@latest
+smoketest <path/to/plugin> <username>
+```
+
+`<username>` must be an existing local system user — the plugin validates that the user exists at startup.
+
+### Menu options
+
+The smoketest presents an interactive numbered menu after bootstrapping the plugin. Each response is pretty-printed as JSON to stdout; plugin log output appears on stderr.
+
+| # | Label | Description |
+|---|-------|-------------|
+| 1 | Get cluster info | Sends a ClusterInfo request; prints the plugin's queue and resource configuration |
+| 2 | Get all jobs | Retrieves all jobs for the given user |
+| 3 | Get filtered jobs | Retrieves jobs matching the tag `filter job` |
+| 4 | Get running jobs | Retrieves jobs with status Running |
+| 5 | Get finished jobs | Retrieves jobs with status Finished |
+| 6 | Get job statuses | Opens a status stream for all jobs, waits for at least one response per submitted job, then cancels it |
+| 7 | Submit quick job (matches filter) | Submits a short shell script job tagged `filter job` |
+| 8 | Submit quick job 2 (doesn't match filter) | Submits an `echo` job with a different tag |
+| 9 | Submit stderr job (doesn't match filter) | Submits a job that produces stderr output |
+| 10 | Submit long job (matches filter) | Submits a multi-step sleep job that runs for several minutes |
+| 11 | Stream last job's output (stdout and stderr) | Streams combined output from the most recently submitted job |
+| 12 | Stream last job's output (stdout) | Streams stdout from the most recently submitted job |
+| 13 | Stream last job's output (stderr) | Streams stderr from the most recently submitted job |
+| 14 | Stream last job's resource utilization | Streams CPU/memory stats; the job must be running |
+| 15 | Get last job's network information | Returns host/port information for the most recently submitted job |
+| 16 | Submit a slow job and then cancel it | Submits a `sleep 20` job and sends Cancel as soon as the submit response arrives (no added delay) |
+| 17 | Submit a slow job and then kill it | Submits a `sleep 20` job, waits 1 second, then sends Kill |
+| 18 | Submit a slow job and then stop it | Submits a `sleep 20` job, waits 1 second, then sends Stop |
+| 19 | Submit a slow job, suspend it, and then resume it | Submits a `sleep 20` job, sends Suspend, then Resume |
+| 20 | Exit | Closes the connection and shuts down the plugin (`q` or `Q` also exit) |
 
 ## Testing utilities
 

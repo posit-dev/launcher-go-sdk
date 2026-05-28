@@ -103,7 +103,7 @@ func (st *smokeTest) nextID() uint64 {
 }
 
 func (st *smokeTest) initialize() error {
-	args := []string{"--heartbeat-interval-seconds=0", "--enable-debug-logging=1"}
+	args := []string{"--heartbeat-interval-seconds=0", "--enable-debug-logging=1", "--logging-dir="}
 	if os.Getuid() != 0 {
 		args = append(args, "--unprivileged=1")
 	}
