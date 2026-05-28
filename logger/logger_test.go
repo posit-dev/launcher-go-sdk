@@ -219,6 +219,29 @@ func TestHandleAnyNonError(t *testing.T) {
 	}
 }
 
+func TestNewLoggerCreatesDirectory(t *testing.T) {
+	nested := filepath.Join(t.TempDir(), "a", "b", "c")
+	lgr, err := NewLogger("plugin", false, nested)
+	if err != nil {
+		t.Fatalf("NewLogger returned error for missing dir: %v", err)
+	}
+	lgr.Info("hello")
+	if _, statErr := os.Stat(filepath.Join(nested, "plugin.log")); statErr != nil {
+		t.Errorf("log file not created: %v", statErr)
+	}
+}
+
+func TestNewLoggerMkdirAllFailure(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewLogger("plugin", false, filepath.Join(blocker, "subdir"))
+	if err == nil {
+		t.Fatal("expected error when loggingDir cannot be created, got nil")
+	}
+}
+
 // TestIssue15Reproducer is the verbatim test from issue #15. It exercises
 // the full NewLogger -> file path and asserts that scalar, slog.Group, and
 // LogValuer-as-group attributes all reach the log file.
