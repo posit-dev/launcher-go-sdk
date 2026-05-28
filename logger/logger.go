@@ -29,6 +29,9 @@ func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error)
 	if loggingDir == "" {
 		return newWorkbenchLogger(name, os.Stderr, level), nil
 	}
+	if err := os.MkdirAll(loggingDir, 0o775); err != nil { //nolint:gosec // log dir from trusted plugin config
+		return nil, err
+	}
 	fname := name + ".log"
 	logFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
