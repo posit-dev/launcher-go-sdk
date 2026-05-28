@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-27
+
 ### Added
 - **Plugin API 3.7.0**: Plugin metrics framework. Plugins can now report periodic metrics to the Launcher for Prometheus exposition.
   - `MetricsPlugin` optional interface in `launcher` package — plugins implement `Metrics(ctx context.Context) PluginMetrics` to report custom metrics
@@ -127,5 +129,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This is a pre-1.0 release (v0.x). The API may change in minor version updates. We will document breaking changes with migration guides.
 
-[Unreleased]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/posit-dev/launcher-go-sdk/releases/tag/v0.1.0
