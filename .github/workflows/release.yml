@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v0.2.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -27,45 +33,110 @@ jobs:
     - name: Install just
       uses: extractions/setup-just@v4
 
+    - name: Determine version
+      id: get_version
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+          if [[ ! "$INPUT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "ERROR: Version must be a valid semver tag like v0.2.0 or v0.2.0-rc.1. Got: $INPUT_VERSION"
+            exit 1
+          fi
+          echo "VERSION=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+        else
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Validate changelog entry exists
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        VERSION: ${{ steps.get_version.outputs.VERSION }}
+      run: |
+        if [ ! -f CHANGELOG.md ]; then
+          echo "ERROR: CHANGELOG.md not found at repository root."
+          exit 1
+        fi
+        VERSION_NUM="${VERSION#v}"
+        VERSION_ESCAPED="${VERSION_NUM//./\\.}"
+        if ! grep -q "^## \[${VERSION_ESCAPED}\]" CHANGELOG.md; then
+          echo "ERROR: No CHANGELOG.md section found for [${VERSION_NUM}]"
+          echo "Update CHANGELOG.md and merge to main before releasing."
+          exit 1
+        fi
+
     - name: Run tests
       run: just test-verbose
 
     - name: Build examples
       run: just build-examples
 
-    - name: Extract version from tag
-      id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    - name: Create and push tag
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        VERSION: ${{ steps.get_version.outputs.VERSION }}
+      run: |
+        ls_remote_out=$(git ls-remote --tags origin "refs/tags/$VERSION" 2>&1)
+        ls_remote_exit=$?
+        if [ $ls_remote_exit -ne 0 ]; then
+          echo "ERROR: Unable to reach origin to check for existing tag: $ls_remote_out"
+          exit 1
+        fi
+        if [ -n "$ls_remote_out" ]; then
+          echo "ERROR: Tag $VERSION already exists on origin."
+          echo "If you want to re-run the release for an existing tag, use the push: tags trigger instead."
+          exit 1
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag "$VERSION"
+        git push origin "$VERSION"
 
     - name: Extract changelog for this version
       id: changelog
       run: |
-        # Extract the section for this version from CHANGELOG.md
         VERSION="${{ steps.get_version.outputs.VERSION }}"
-        # Remove 'v' prefix for changelog lookup
         VERSION_NUM="${VERSION#v}"
+        VERSION_ESCAPED="${VERSION_NUM//./\\.}"
 
-        # Read changelog section
-        CHANGELOG=$(sed -n "/^## \[${VERSION_NUM}\]/,/^## \[/p" CHANGELOG.md | sed '$d')
-
-        if [ -z "$CHANGELOG" ]; then
-          echo "No changelog found for version ${VERSION_NUM}, using default"
-          CHANGELOG="See [CHANGELOG.md](https://github.com/posit-dev/launcher-go-sdk/blob/main/CHANGELOG.md) for details."
+        if [ ! -f CHANGELOG.md ]; then
+          echo "ERROR: CHANGELOG.md not found at repository root."
+          exit 1
         fi
 
-        # Save to file for use in release
+        CHANGELOG=$(awk -v ver="${VERSION_ESCAPED}" '
+          BEGIN { p=0 }
+          /^## \[/ { if (p) exit; if ($0 ~ "^## \\[" ver "\\]") p=1 }
+          p { print }
+        ' CHANGELOG.md)
+
+        if [ -z "$CHANGELOG" ]; then
+          if [[ "$VERSION" == *-* ]]; then
+            echo "No CHANGELOG.md section for pre-release ${VERSION}; using generic notes."
+            CHANGELOG="See [CHANGELOG.md](https://github.com/posit-dev/launcher-go-sdk/blob/main/CHANGELOG.md) for details."
+          else
+            echo "ERROR: No CHANGELOG.md section found for [${VERSION_NUM}]."
+            echo "Add a [${VERSION_NUM}] section to CHANGELOG.md and re-tag."
+            exit 1
+          fi
+        fi
+
         echo "$CHANGELOG" > release_notes.md
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v3
       with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
         name: Release ${{ steps.get_version.outputs.VERSION }}
         body_path: release_notes.md
         draft: false
         prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}
-        generate_release_notes: true
 
     - name: Publish to pkg.go.dev
+      env:
+        VERSION: ${{ steps.get_version.outputs.VERSION }}
       run: |
-        # Trigger pkg.go.dev to index the new version
-        curl -f "https://proxy.golang.org/github.com/posit-dev/launcher-go-sdk/@v/${{ steps.get_version.outputs.VERSION }}.info" || true
+        if ! curl -f --retry 3 --retry-delay 5 --max-time 30 "https://proxy.golang.org/github.com/posit-dev/launcher-go-sdk/@v/$VERSION.info"; then
+          echo "WARNING: pkg.go.dev indexing request failed. The release is complete."
+          echo "Visit https://pkg.go.dev/github.com/posit-dev/launcher-go-sdk@$VERSION to trigger indexing manually."
+        fi
