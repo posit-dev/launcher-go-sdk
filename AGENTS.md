@@ -4,7 +4,7 @@
 
 Go SDK for building Launcher plugins that integrate job schedulers (Slurm, Kubernetes, PBS, cloud platforms, etc.) with Posit Workbench and Posit Connect. Implements Launcher Plugin API v3.6.0.
 
-**Language:** Go 1.24+
+**Language:** Go 1.25+
 **License:** MIT
 **Module:** `github.com/posit-dev/launcher-go-sdk`
 **Status:** Pre-1.0 (v0.1.0) — API may change in minor versions
@@ -75,7 +75,7 @@ These CLI tools are installed and available for use:
 ## CI
 
 GitHub Actions workflows in `.github/workflows/`:
-- **test.yml** — Matrix: ubuntu/macos × Go 1.24/1.25, race detector, coverage (min 15%), Codecov
+- **test.yml** — Matrix: ubuntu/macos × Go 1.25/1.26, race detector, coverage (min 15%), Codecov
 - **lint.yml** — golangci-lint, gofmt check, go vet
 - **examples.yml** — Build examples, verify READMEs
 - **release.yml** — On `v*` tags: test, build, create GitHub release, trigger pkg.go.dev indexing

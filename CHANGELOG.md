@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Minimum Go version is now 1.25** (was 1.24). Go 1.24 is no longer supported; the `go` directive in `go.mod` is now `1.25.0`.
+
+### CI
+- Test matrix now runs against Go 1.25 and 1.26 (dropped 1.24, added 1.26).
+
 ## [0.2.0] - 2026-05-27
 
 ### Added
