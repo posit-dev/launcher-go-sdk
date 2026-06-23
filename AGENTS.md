@@ -7,7 +7,7 @@ Go SDK for building Launcher plugins that integrate job schedulers (Slurm, Kuber
 **Language:** Go 1.25+
 **License:** MIT
 **Module:** `github.com/posit-dev/launcher-go-sdk`
-**Status:** Pre-1.0 (v0.1.0) — API may change in minor versions
+**Status:** Pre-1.0 (v0.2.0) — API may change in minor versions
 
 ## Build & Test Commands
 
@@ -62,6 +62,7 @@ just bench              # Run benchmarks
 ## Key Dependencies
 
 - `golang.org/x/tools` — Go tooling (goimports)
+- `github.com/prometheus/client_golang` — Histogram accumulation for plugin metrics (v3.8.0+)
 - `golangci-lint` — Dev-only via `tools.go` build tag
 
 ## Available Tools
