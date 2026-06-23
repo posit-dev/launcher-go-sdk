@@ -1,7 +1,9 @@
 package api //nolint:revive // short package name is intentional for this API package
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -411,8 +413,9 @@ func TestResourceLimit_StructFields(t *testing.T) {
 func TestPlacementConstraint_StructFields(t *testing.T) {
 	// Test that PlacementConstraint struct has expected fields
 	constraint := &PlacementConstraint{
-		Name:  "node-type",
-		Value: "gpu",
+		Name:    "node-type",
+		Value:   "gpu",
+		Default: "cpu",
 	}
 
 	if constraint.Name != "node-type" {
@@ -421,6 +424,48 @@ func TestPlacementConstraint_StructFields(t *testing.T) {
 
 	if constraint.Value != "gpu" {
 		t.Errorf("PlacementConstraint.Value = %q, want %q", constraint.Value, "gpu")
+	}
+
+	if constraint.Default != "cpu" {
+		t.Errorf("PlacementConstraint.Default = %q, want %q", constraint.Default, "cpu")
+	}
+}
+
+func TestPlacementConstraint_JSONRoundTrip(t *testing.T) {
+	original := PlacementConstraint{
+		Name:    "partition",
+		Value:   "gpu",
+		Default: "standard",
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	// Verify the wire key is "defaultValue", not "default".
+	raw := string(data)
+	if !strings.Contains(raw, `"defaultValue":"standard"`) {
+		t.Errorf("marshaled JSON = %s, want it to contain %q", raw, `"defaultValue":"standard"`)
+	}
+
+	var got PlacementConstraint
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got != original {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", got, original)
+	}
+}
+
+func TestPlacementConstraint_JSONOmitsDefaultWhenEmpty(t *testing.T) {
+	c := PlacementConstraint{Name: "partition", Value: "gpu"}
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if strings.Contains(string(data), "defaultValue") {
+		t.Errorf("marshaled JSON %s should not contain defaultValue when Default is empty", data)
 	}
 }
 

@@ -752,6 +752,9 @@ type PlacementConstraint struct {
 
 	// One of the possible values of the placement constraint. Optional.
 	Value string `json:"value,omitempty"`
+
+	// The default value for the constraint, used as a pre-fill hint for the UI. Optional.
+	Default string `json:"defaultValue,omitempty"`
 }
 
 // Port is an exposed port for containerized jobs.
@@ -879,7 +882,7 @@ type Version struct {
 
 // APIVersion is the Launcher plugin API version supported by the types defined
 // in this package.
-var APIVersion = Version{Major: 3, Minor: 7, Patch: 0}
+var APIVersion = Version{Major: 3, Minor: 8, Patch: 0}
 
 // ConfigReloadErrorType classifies config reload errors.
 type ConfigReloadErrorType int
