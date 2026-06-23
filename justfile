@@ -116,7 +116,7 @@ outdated:
 # Install development tools
 install-tools:
     @echo "Installing golangci-lint..."
-    @which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    @which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
     @echo "Installing goimports..."
     @which goimports > /dev/null || go install golang.org/x/tools/cmd/goimports@latest
     @echo "Tools installed successfully"
