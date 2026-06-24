@@ -1006,13 +1006,12 @@ Thread-safe job storage with permission enforcement and pub/sub.
 #### Function: NewJobCache
 
 ```go
-func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error)
+func NewJobCache(lgr *slog.Logger) (*JobCache, error)
 ```
 
-Creates a new in-memory job cache. The scheduler is the source of truth for job state; plugins should populate the cache during `Bootstrap()` and keep it in sync via periodic polling.
+Creates a new in-memory job cache. The scheduler is the source of truth for job state; plugins should populate the cache during `Bootstrap()` and keep it in sync via periodic polling. The caller must call `Close()` to release the cache's resources and stop its internal goroutine.
 
 **Parameters**:
-- `ctx` - Context for background operations
 - `lgr` - Structured logger
 
 **Returns**: JobCache instance and error

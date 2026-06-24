@@ -80,7 +80,8 @@ func main() {
     launcher.MustLoadOptions(options, "myplugin")
 
     lgr := logger.MustNewLogger("myplugin", options.Debug, options.LoggingDir)
-    jobCache, _ := cache.NewJobCache(ctx, lgr)
+    jobCache, _ := cache.NewJobCache(lgr)
+    defer jobCache.Close()
 
     plugin := &MyPlugin{cache: jobCache}
     launcher.NewRuntime(lgr, plugin).Run(ctx)
@@ -129,7 +130,7 @@ type Plugin interface {
 The SDK provides a job cache for storing and querying jobs:
 
 ```go
-cache, err := cache.NewJobCache(ctx, logger)
+cache, err := cache.NewJobCache(logger)
 
 // Store a job
 cache.AddOrUpdate(job)

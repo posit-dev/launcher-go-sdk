@@ -290,7 +290,8 @@ func TestSubmitJob(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Create test job
@@ -323,7 +324,8 @@ func TestGetJob(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Add a job to cache
@@ -356,7 +358,8 @@ func TestGetJob_NotFound(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Execute (job doesn't exist)
@@ -375,7 +378,8 @@ func TestGetJobs_FilterByStatus(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Add multiple jobs with different statuses
@@ -412,7 +416,8 @@ func TestControlJob_Kill(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Add a running job
@@ -446,7 +451,8 @@ func TestControlJob_InvalidState(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Add a finished job
@@ -475,7 +481,8 @@ func TestGetJobStatus(t *testing.T) {
     defer cancel()
 
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Add a job
@@ -527,7 +534,8 @@ func TestGetJobOutput(t *testing.T) {
     defer cancel()
 
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Add a job
@@ -567,7 +575,8 @@ func TestClusterInfo(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
     plugin := &MyPlugin{cache: cache}
 
     // Execute
@@ -610,7 +619,8 @@ func TestSubmitJob_RealSlurm(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", true, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
 
     // Create real Slurm client
     client := NewSlurmClient("/usr/bin")
@@ -703,7 +713,8 @@ func TestControlJob_Operations(t *testing.T) {
             // Setup
             ctx := context.Background()
             lgr := logger.MustNewLogger("test", false, "")
-            cache, _ := cache.NewJobCache(ctx, lgr)
+            cache, _ := cache.NewJobCache(lgr)
+            defer cache.Close()
             plugin := &MyPlugin{cache: cache}
 
             // Add job with initial status
@@ -744,7 +755,7 @@ func testPlugin(t *testing.T) (*MyPlugin, *cache.JobCache) {
 
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, err := cache.NewJobCache(ctx, lgr)
+    cache, err := cache.NewJobCache(lgr)
     if err != nil {
         t.Fatalf("Failed to create cache: %v", err)
     }
@@ -968,8 +979,8 @@ func assertJobExists(t *testing.T, plugin *MyPlugin, jobID api.JobID) {
 
 ```go
 func TestWithCache(t *testing.T) {
-    cache, _ := cache.NewJobCache(ctx, lgr)
-    defer cache.Close() // Ensure cleanup
+    cache, _ := cache.NewJobCache(lgr)
+    defer cache.Close()
 
     // Test code...
 }

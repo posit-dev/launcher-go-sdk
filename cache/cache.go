@@ -24,10 +24,14 @@ type JobCache struct {
 	updatesByID   map[api.JobID]*subManager
 	updatesByUser map[string]*subManager
 	done          chan struct{}
+	stop          chan struct{}
+	closeOnce     sync.Once
 }
 
-// NewJobCache returns a JobCache backed by an in-memory store.
-func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
+// NewJobCache returns a JobCache backed by an in-memory store. The caller is
+// responsible for calling Close to release the cache's resources and stop its
+// internal goroutine.
+func NewJobCache(lgr *slog.Logger) (*JobCache, error) {
 	r := &JobCache{
 		lgr:           lgr,
 		store:         newInMemoryStore(),
@@ -35,68 +39,102 @@ func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
 		updatesByID:   make(map[api.JobID]*subManager),
 		updatesByUser: make(map[string]*subManager),
 		done:          make(chan struct{}),
+		stop:          make(chan struct{}),
 	}
 	r.updates = &subManager{}
 	go func() {
+		// close(r.done) signals Close() that the goroutine has fully exited.
+		defer close(r.done)
 		defer func() {
 			if v := recover(); v != nil {
-				r.lgr.Error("Panic in status update goroutine",
-					"panic", v)
+				r.lgr.Error("Panic in status update goroutine", "panic", v)
 			}
-			closed := r.updates.Close()
-			for _, mgr := range r.updatesByID {
-				closed += mgr.Close()
-			}
-			for _, mgr := range r.updatesByUser {
-				closed += mgr.Close()
-			}
+		}()
+		defer func() {
+			closed := r.closeSubscribers()
 			r.lgr.Debug("Removed remaining status update subscribers",
 				"count", closed)
-			r.done <- struct{}{}
 		}()
 		r.lgr.Debug("Listening for job status updates")
+		// The goroutine runs until Close() closes r.stop.
 		for {
 			select {
-			case <-ctx.Done():
-			case u, ok := <-r.ch:
-				if !ok {
-					break
-				}
-				r.lgr.Debug("Got status update; acquiring lock",
-					"id", u.ID, "user", u.User, "status", u.Status)
-				r.mu.Lock()
-				notified := r.updates.Notify(u)
-				if mgr, ok := r.updatesByID[u.ID]; ok {
-					notified += mgr.Notify(u)
-				}
-				if mgr, ok := r.updatesByUser[u.User]; ok {
-					notified += mgr.Notify(u)
-				}
-				r.mu.Unlock()
-				if notified == 0 {
-					r.lgr.Debug("No subscribers to notify")
-				} else {
-					r.lgr.Debug(
-						"Subscribers notified of status update",
-						"count", notified)
-				}
-				continue
+			case u := <-r.ch:
+				r.processUpdate(u)
+			case <-r.stop:
+				return
 			}
-			break
 		}
 	}()
 	return r, nil
 }
 
-// Close sends any remaining status updates and closes open channels.
-func (r *JobCache) Close() error {
-	r.lgr.Debug("Closing job cache")
-	close(r.ch)
-	<-r.done
-	if err := r.store.Close(); err != nil {
-		return fmt.Errorf("failed to close job cache: %w", err)
+// processUpdate delivers a status update to all registered subscribers.
+// r.mu is held for the duration to keep notification, subscription, and
+// teardown mutually exclusive.
+func (r *JobCache) processUpdate(u *statusUpdate) {
+	r.lgr.Debug("Got status update; acquiring lock",
+		"id", u.ID, "user", u.User, "status", u.Status)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	notified, dropped := r.updates.Notify(u)
+	if mgr, ok := r.updatesByID[u.ID]; ok {
+		n, d := mgr.Notify(u)
+		notified += n
+		dropped += d
 	}
-	return nil
+	if mgr, ok := r.updatesByUser[u.User]; ok {
+		n, d := mgr.Notify(u)
+		notified += n
+		dropped += d
+	}
+	switch {
+	case notified == 0 && dropped == 0:
+		r.lgr.Debug("No subscribers to notify")
+	case dropped > 0:
+		r.lgr.Warn("Status update dropped for slow subscribers",
+			"notified", notified, "dropped", dropped)
+	default:
+		r.lgr.Debug("Subscribers notified of status update",
+			"count", notified)
+	}
+}
+
+// closeSubscribers closes all subscriber channels and returns the count closed.
+// It acquires r.mu and must not be called while r.mu is held. It is called
+// only from the service goroutine's cleanup defer.
+func (r *JobCache) closeSubscribers() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	closed := r.updates.Close()
+	for _, mgr := range r.updatesByID {
+		closed += mgr.Close()
+	}
+	for _, mgr := range r.updatesByUser {
+		closed += mgr.Close()
+	}
+	return closed
+}
+
+// Close stops the cache's internal goroutine, closes all subscriber channels,
+// and closes the underlying store. Updates still buffered in the internal
+// channel at shutdown time may be dropped. It is safe to call Close more than
+// once; subsequent calls are no-ops.
+func (r *JobCache) Close() error {
+	var storeErr error
+	r.closeOnce.Do(func() {
+		r.lgr.Debug("Closing job cache")
+		// close(r.stop) signals the service goroutine to exit. <-r.done then
+		// blocks until the goroutine has finished closing all subscriber channels,
+		// ensuring no subscriber receives a message after Close returns.
+		close(r.stop)
+		<-r.done
+		if err := r.store.Close(); err != nil {
+			storeErr = fmt.Errorf("failed to close job cache: %w", err)
+			r.lgr.Error("Failed to close job store", "error", storeErr)
+		}
+	})
+	return storeErr
 }
 
 // Lookup passes a callback the cached job with a given id or returns an error.
@@ -316,6 +354,12 @@ func (r *JobCache) All(yield func(*api.Job) bool) {
 func (r *JobCache) subscribeToID(ctx context.Context, id api.JobID, ch chan<- *statusUpdate) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	select {
+	case <-r.stop:
+		close(ch)
+		return
+	default:
+	}
 	mgr := r.updatesByID[id]
 	if mgr == nil {
 		mgr = &subManager{}
@@ -330,6 +374,12 @@ func (r *JobCache) subscribeToID(ctx context.Context, id api.JobID, ch chan<- *s
 func (r *JobCache) subscribeToUser(ctx context.Context, user string, ch chan<- *statusUpdate) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	select {
+	case <-r.stop:
+		close(ch)
+		return
+	default:
+	}
 	if user == "*" {
 		r.updates.Subscribe(ctx, ch)
 		r.lgr.Debug("Added subscription for all users", "count",
@@ -396,19 +446,21 @@ func (s *subManager) Count() int {
 // status. Notifications will not be sent after the passed context is canceled
 // and the channel will be closed.
 func (s *subManager) Subscribe(ctx context.Context, ch chan<- *statusUpdate) {
-	s.subs.PushBack(&subscriber{ctx, ch})
+	s.subs.PushBack(&subscriber{Context: ctx, Channel: ch})
 }
 
-// Notify sends the updated job status to existing subscribers, if any.
-func (s *subManager) Notify(u *statusUpdate) int {
+// Notify sends the updated job status to existing subscribers, if any. It
+// returns the number of subscribers notified and the number whose channels
+// were full and therefore skipped.
+func (s *subManager) Notify(u *statusUpdate) (notified, dropped int) {
 	elt := s.subs.Front()
-	notified := 0
 	for elt != nil {
 		sub, ok := elt.Value.(*subscriber)
 		if !ok {
 			panic("unexpected type in subscriber list")
 		}
 		if sub.Context.Err() != nil {
+			sub.closed = true
 			close(sub.Channel)
 			next := elt.Next()
 			s.subs.Remove(elt)
@@ -421,11 +473,12 @@ func (s *subManager) Notify(u *statusUpdate) int {
 		default:
 			// Subscriber isn't consuming fast enough; skip this update.
 			// The subscriber will miss this status change but may receive
-			// later updates. No error is reported to the subscriber.
+			// later updates.
+			dropped++
 		}
 		elt = elt.Next()
 	}
-	return notified
+	return notified, dropped
 }
 
 // Close closes the channels of any remaining subscribers and returns the number
@@ -439,9 +492,12 @@ func (s *subManager) Close() int {
 		if !ok {
 			panic("unexpected type in subscriber list")
 		}
-		close(sub.Channel)
+		if !sub.closed {
+			sub.closed = true
+			close(sub.Channel)
+			closed++
+		}
 		elt = s.subs.Front()
-		closed++
 	}
 	return closed
 }
@@ -470,6 +526,9 @@ func (r *JobCache) notify(job *api.Job) {
 	u := newStatusUpdateFromJob(job)
 	select {
 	case r.ch <- u:
+	case <-r.stop:
+		r.lgr.Debug("Cache closing; discarding in-flight status update",
+			"id", job.ID, "status", job.Status)
 	default:
 		r.lgr.Warn("Status update channel full, dropping update",
 			"id", job.ID, "status", job.Status)
@@ -479,4 +538,5 @@ func (r *JobCache) notify(job *api.Job) {
 type subscriber struct {
 	Context context.Context
 	Channel chan<- *statusUpdate
+	closed  bool
 }

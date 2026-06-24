@@ -211,7 +211,7 @@ func TestSubmitJob(t *testing.T) {
     // Create plugin
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
     plugin := &InMemoryPlugin{cache: cache}
 
     // Create mock writer

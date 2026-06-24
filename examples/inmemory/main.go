@@ -364,11 +364,16 @@ func main() {
 	lgr.Info("Starting InMemory plugin")
 
 	// Create the job cache
-	jobCache, err := cache.NewJobCache(ctx, lgr)
+	jobCache, err := cache.NewJobCache(lgr)
 	if err != nil {
 		lgr.Error("Failed to create job cache", "error", err)
 		os.Exit(1)
 	}
+	defer func() {
+		if err := jobCache.Close(); err != nil {
+			lgr.Error("Failed to close job cache", "error", err)
+		}
+	}()
 
 	// Create the plugin instance
 	plugin := &InMemoryPlugin{

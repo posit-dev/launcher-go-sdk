@@ -134,7 +134,7 @@ func main() {
     lgr := logger.MustNewLogger("myplugin", options.Debug, options.LoggingDir)
 
     // Create job cache
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
 
     // Create and run plugin
     plugin := &MyPlugin{cache: cache}
@@ -252,7 +252,7 @@ The SDK provides a job cache for storing and querying jobs:
 
 ```go
 // Create cache (in main)
-cache, err := cache.NewJobCache(ctx, logger)
+cache, err := cache.NewJobCache(logger)
 
 // Store a job
 job.ID = "job-123"
@@ -607,7 +607,7 @@ func (o *SlurmOptions) Validate() error {
 The JobCache provides in-memory storage with pub/sub. The scheduler is always the source of truth — the cache is a local working copy.
 
 ```go
-cache, err := cache.NewJobCache(ctx, logger)
+cache, err := cache.NewJobCache(logger)
 ```
 
 Plugins should populate the cache from the scheduler during `Bootstrap()` and keep it in sync via a periodic polling loop (e.g., every 5 seconds). This is consistent with how all existing Launcher plugins (Local, Kubernetes, Slurm) operate.
@@ -724,7 +724,7 @@ func TestSubmitJob(t *testing.T) {
     // Setup
     ctx := context.Background()
     lgr := logger.MustNewLogger("test", false, "")
-    cache, _ := cache.NewJobCache(ctx, lgr)
+    cache, _ := cache.NewJobCache(lgr)
     plugin := &MyPlugin{cache: cache}
 
     // Create mock writer
