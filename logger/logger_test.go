@@ -219,35 +219,12 @@ func TestHandleAnyNonError(t *testing.T) {
 	}
 }
 
-func TestNewLoggerCreatesDirectory(t *testing.T) {
-	nested := filepath.Join(t.TempDir(), "a", "b", "c")
-	lgr, err := NewLogger("plugin", false, nested)
-	if err != nil {
-		t.Fatalf("NewLogger returned error for missing dir: %v", err)
-	}
-	lgr.Info("hello")
-	if _, statErr := os.Stat(filepath.Join(nested, "plugin.log")); statErr != nil {
-		t.Errorf("log file not created: %v", statErr)
-	}
-}
-
-func TestNewLoggerMkdirAllFailure(t *testing.T) {
-	blocker := filepath.Join(t.TempDir(), "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := NewLogger("plugin", false, filepath.Join(blocker, "subdir"))
-	if err == nil {
-		t.Fatal("expected error when loggingDir cannot be created, got nil")
-	}
-}
-
 // TestIssue15Reproducer is the verbatim test from issue #15. It exercises
 // the full NewLogger -> file path and asserts that scalar, slog.Group, and
 // LogValuer-as-group attributes all reach the log file.
 func TestIssue15Reproducer(t *testing.T) {
 	dir := t.TempDir()
-	lgr, err := NewLogger("test", false, dir)
+	lgr, err := NewLogger("test", Config{Type: DestinationFile, Level: slog.LevelInfo, Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,10 +329,77 @@ func TestHandleLogValuerScalar(t *testing.T) {
 	}
 }
 
-// TestLevelTokens verifies that each standard slog level maps to the token
-// expected by the Workbench launcher. In particular, slog.LevelWarn.String()
-// returns "WARN" but the launcher requires "WARNING"; unrecognized tokens are
-// silently demoted to DEBUG (issue #25).
+func TestNewLoggerStderrType(t *testing.T) {
+	// DestinationStderr: no files created even when Dir is set.
+	dir := t.TempDir()
+	lgr, err := NewLogger("plugin", Config{Type: DestinationStderr, Level: slog.LevelInfo, Dir: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lgr.Info("hello")
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Errorf("want no files in dir for stderr logger, got %v", entries)
+	}
+}
+
+func TestNewLoggerFileType(t *testing.T) {
+	dir := t.TempDir()
+	lgr, err := NewLogger("plugin", Config{Type: DestinationFile, Level: slog.LevelInfo, Dir: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lgr.Info("hello")
+	if _, err := os.Stat(filepath.Join(dir, "plugin.log")); err != nil {
+		t.Errorf("log file not created: %v", err)
+	}
+}
+
+func TestNewLoggerFileTypeCreatesDir(t *testing.T) {
+	nested := filepath.Join(t.TempDir(), "a", "b", "c")
+	lgr, err := NewLogger("plugin", Config{Type: DestinationFile, Level: slog.LevelInfo, Dir: nested})
+	if err != nil {
+		t.Fatalf("NewLogger returned error for missing dir: %v", err)
+	}
+	lgr.Info("hello")
+	if _, err := os.Stat(filepath.Join(nested, "plugin.log")); err != nil {
+		t.Errorf("log file not created: %v", err)
+	}
+}
+
+func TestNewLoggerFileTypeEmptyDir(t *testing.T) {
+	// Type=file with Dir="" falls back to stderr-only without error.
+	lgr, err := NewLogger("plugin", Config{Type: DestinationFile, Level: slog.LevelInfo})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lgr.Info("hello")
+}
+
+func TestNewLoggerMkdirFailure(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewLogger("plugin", Config{
+		Type:  DestinationFile,
+		Level: slog.LevelInfo,
+		Dir:   filepath.Join(blocker, "subdir"),
+	})
+	if err == nil {
+		t.Fatal("expected error when Dir cannot be created, got nil")
+	}
+}
+
+func TestMustNewLogger(t *testing.T) {
+	lgr := MustNewLogger("plugin", Config{Type: DestinationStderr, Level: slog.LevelInfo})
+	if lgr == nil {
+		t.Fatal("MustNewLogger returned nil logger")
+	}
+	// Verify the logger is functional.
+	lgr.Info("smoke test")
+}
+
 func TestLevelTokens(t *testing.T) {
 	cases := []struct {
 		level slog.Level

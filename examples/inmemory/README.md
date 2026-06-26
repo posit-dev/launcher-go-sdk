@@ -210,7 +210,7 @@ import (
 func TestSubmitJob(t *testing.T) {
     // Create plugin
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     plugin := &InMemoryPlugin{cache: cache}
 

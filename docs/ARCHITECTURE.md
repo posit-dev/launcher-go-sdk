@@ -124,8 +124,9 @@ type JobCache struct { /* ... */ }
 Workbench-style logging utilities:
 
 ```go
-func NewLogger(name string, debug bool, dir string) (*slog.Logger, error)
-func MustNewLogger(name string, debug bool, dir string) *slog.Logger
+func NewLogger(name string, cfg Config) (*slog.Logger, error)
+func MustNewLogger(name string, cfg Config) *slog.Logger
+func LoadConfig(name string, defaults Config) (Config, error)
 ```
 
 **Design rationale**: Wraps `slog` with Posit product conventions (file rotation, formatting) so plugins match the logging style of Workbench and Connect.

@@ -79,7 +79,23 @@ func main() {
     options := &launcher.DefaultOptions{}
     launcher.MustLoadOptions(options, "myplugin")
 
-    lgr := logger.MustNewLogger("myplugin", options.Debug, options.LoggingDir)
+    logDefaults := logger.Config{
+        Level: slog.LevelInfo,
+        Type:  logger.DestinationFile,
+        Dir:   options.LoggingDir,
+    }
+    if options.Debug {
+        logDefaults.Level = slog.LevelDebug
+    }
+    logCfg, err := logger.LoadConfig("myplugin", logDefaults)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Failed to load logging config: %v\n", err)
+        os.Exit(1)
+    }
+    if options.Debug && logCfg.Level > slog.LevelDebug {
+        logCfg.Level = slog.LevelDebug
+    }
+    lgr := logger.MustNewLogger("myplugin", logCfg)
     jobCache, _ := cache.NewJobCache(lgr)
     defer jobCache.Close()
 
