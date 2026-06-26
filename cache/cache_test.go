@@ -27,15 +27,22 @@ func TestCloseStopsGoroutine(t *testing.T) {
 		if err := c.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
 		}
-		// Close() blocks until the background goroutine sends on r.done, so
-		// by the time Close() returns the goroutine has already exited — no
-		// sleep needed.
 	}
 
-	after := runtime.NumGoroutine()
+	// Close() unblocks once the goroutine calls close(r.done), but the goroutine
+	// may still be counted by runtime.NumGoroutine() for a brief window while the
+	// scheduler finalizes it. Poll until the count settles or 100ms elapses.
+	var after int
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for {
+		after = runtime.NumGoroutine()
+		if after <= before || time.Now().After(deadline) {
+			break
+		}
+		runtime.Gosched()
+	}
 	if after > before {
 		buf := make([]byte, 1<<20)
-		// runtime.Stack fills buf and returns bytes written; slice to that length.
 		t.Errorf("goroutine leak: count went from %d to %d\n%s",
 			before, after, buf[:runtime.Stack(buf, true)])
 	}
