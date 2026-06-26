@@ -131,7 +131,24 @@ func main() {
     launcher.MustLoadOptions(options, "myplugin")
 
     // Create logger
-    lgr := logger.MustNewLogger("myplugin", options.Debug, options.LoggingDir)
+    logDefaults := logger.Config{
+        Level: slog.LevelInfo,
+        Type:  logger.DestinationFile,
+        Dir:   options.LoggingDir,
+    }
+    if options.Debug {
+        logDefaults.Level = slog.LevelDebug
+    }
+    logCfg, err := logger.LoadConfig("myplugin", logDefaults)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Failed to load logging config: %v\n", err)
+        os.Exit(1)
+    }
+    // Enforce --enable-debug-logging: logging.conf must not lower level below DEBUG.
+    if options.Debug && logCfg.Level > slog.LevelDebug {
+        logCfg.Level = slog.LevelDebug
+    }
+    lgr := logger.MustNewLogger("myplugin", logCfg)
 
     // Create job cache
     cache, _ := cache.NewJobCache(lgr)
@@ -723,7 +740,7 @@ For testing individual methods in isolation, use the `plugintest` package:
 func TestSubmitJob(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     plugin := &MyPlugin{cache: cache}
 

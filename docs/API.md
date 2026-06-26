@@ -1132,28 +1132,58 @@ Import path: `github.com/posit-dev/launcher-go-sdk/logger`
 
 The logger package provides Workbench-style structured logging.
 
+#### Type: Config
+
+```go
+type Config struct {
+    Level slog.Level
+    Type  Destination
+    Dir   string
+}
+```
+
+Configuration for a logger instance.
+
+**Fields**:
+- `Level` - Log level (e.g. `slog.LevelInfo`, `slog.LevelDebug`)
+- `Type` - Logger output type (`DestinationFile` or `DestinationStderr`)
+- `Dir` - Directory for log files (only used when `Type` is `DestinationFile`)
+
+#### Function: LoadConfig
+
+```go
+func LoadConfig(executableName string, defaults Config) (Config, error)
+```
+
+Loads logging configuration from `/etc/rstudio/logging.conf` (or `$RS_LOG_CONF_FILE` when set), merging with the provided defaults. Applies the `[*]` global section then the `[@executableName]` per-binary section, then env-var overrides (`RS_LOG_LEVEL`, `RS_LOGGER_TYPE`, `RS_LOG_DIR`). `defaults` is the starting [Config]; fields absent from the conf file retain their value from `defaults`.
+
+**Parameters**:
+- `executableName` - Executable name used to match the `[@executableName]` section in `logging.conf`
+- `defaults` - Initial configuration values; used as-is when no conf file is found or a setting is absent
+
+**Returns**: Resolved Config and error
+
 #### Function: NewLogger
 
 ```go
-func NewLogger(name string, debug bool, dir string) (*slog.Logger, error)
+func NewLogger(name string, cfg Config) (*slog.Logger, error)
 ```
 
 Creates a new structured logger.
 
 **Parameters**:
 - `name` - Plugin name (for log filenames)
-- `debug` - Enable debug-level logging
-- `dir` - Directory for log files (empty string = stderr only)
+- `cfg` - Logger configuration
 
 **Returns**: Logger instance and error
 
 #### Function: MustNewLogger
 
 ```go
-func MustNewLogger(name string, debug bool, dir string) *slog.Logger
+func MustNewLogger(name string, cfg Config) *slog.Logger
 ```
 
-Creates a new logger. Panics on error.
+Creates a new logger. On failure, logs the error to stderr and calls `os.Exit(1)`. Deferred functions do not run.
 
 ---
 

@@ -289,7 +289,7 @@ plugintest.AssertStreamClosed(t, streamWriter)
 func TestSubmitJob(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -323,7 +323,7 @@ func TestSubmitJob(t *testing.T) {
 func TestGetJob(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -357,7 +357,7 @@ func TestGetJob(t *testing.T) {
 func TestGetJob_NotFound(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -377,7 +377,7 @@ func TestGetJob_NotFound(t *testing.T) {
 func TestGetJobs_FilterByStatus(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -415,7 +415,7 @@ func TestGetJobs_FilterByStatus(t *testing.T) {
 func TestControlJob_Kill(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -450,7 +450,7 @@ func TestControlJob_Kill(t *testing.T) {
 func TestControlJob_InvalidState(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -480,7 +480,7 @@ func TestGetJobStatus(t *testing.T) {
     ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
     defer cancel()
 
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -533,7 +533,7 @@ func TestGetJobOutput(t *testing.T) {
     ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
     defer cancel()
 
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -574,7 +574,7 @@ func TestGetJobOutput(t *testing.T) {
 func TestClusterInfo(t *testing.T) {
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
     plugin := &MyPlugin{cache: cache}
@@ -618,7 +618,7 @@ func TestSubmitJob_RealSlurm(t *testing.T) {
 
     // Setup
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", true, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, _ := cache.NewJobCache(lgr)
     defer cache.Close()
 
@@ -712,7 +712,7 @@ func TestControlJob_Operations(t *testing.T) {
         t.Run(tt.name, func(t *testing.T) {
             // Setup
             ctx := context.Background()
-            lgr := logger.MustNewLogger("test", false, "")
+            lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
             cache, _ := cache.NewJobCache(lgr)
             defer cache.Close()
             plugin := &MyPlugin{cache: cache}
@@ -754,7 +754,7 @@ func testPlugin(t *testing.T) (*MyPlugin, *cache.JobCache) {
     t.Helper()
 
     ctx := context.Background()
-    lgr := logger.MustNewLogger("test", false, "")
+    lgr := logger.MustNewLogger("test", logger.Config{Type: logger.DestinationStderr, Level: slog.LevelDebug})
     cache, err := cache.NewJobCache(lgr)
     if err != nil {
         t.Fatalf("Failed to create cache: %v", err)

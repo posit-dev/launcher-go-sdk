@@ -7,63 +7,48 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 )
 
-// NewLogger creates a logger that emulates Launcher plugin logging conventions.
-// The name appears in the formatted log messages; debug controls whether
-// debug-level messages are logged and whether the debug-level log file is
-// created; and loggingDir is the directory where the log file (and possibly the
-// debug log file) should be written. Logs are also written to standard error.
-// To disable file-based logging entirely pass an empty string as loggingDir.
-// Note that this function will return a logger that can write to standard
-// error, even in the case of an error -- which is useful when logging fatal
-// errors.
-func NewLogger(name string, debug bool, loggingDir string) (*slog.Logger, error) {
-	var err error
-	level := slog.LevelInfo
-	if debug {
-		level = slog.LevelDebug
+// NewLogger creates a logger from the resolved configuration.
+// name appears in formatted log messages. Obtain cfg via [LoadConfig] to
+// respect Workbench's logging.conf. When cfg.Type is [DestinationStderr] or
+// cfg.Dir is empty the logger writes to stderr only and returns no error.
+func NewLogger(name string, cfg Config) (*slog.Logger, error) {
+	if cfg.Type == DestinationStderr || cfg.Dir == "" {
+		return newWorkbenchLogger(name, os.Stderr, cfg.Level), nil
 	}
-	if loggingDir == "" {
-		return newWorkbenchLogger(name, os.Stderr, level), nil
-	}
-	if err := os.MkdirAll(loggingDir, 0o775); err != nil { //nolint:gosec // log dir from trusted plugin config
+	if err := os.MkdirAll(cfg.Dir, 0o775); err != nil { //nolint:gosec // log dir from trusted plugin config
 		return nil, err
 	}
-	fname := name + ".log"
-	logFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
+	// logFile is intentionally kept open for the process lifetime; the logger
+	// writes to it until the process exits.
+	logFile, err := os.Create(filepath.Join(cfg.Dir, name+".log")) //nolint:gosec // log paths from trusted plugin config
 	if err != nil {
 		return nil, err
 	}
-	if !debug {
-		sink := io.MultiWriter(os.Stderr, logFile)
-		return newWorkbenchLogger(name, sink, level), nil
-	}
-	fname = name + "-debug.log"
-	debugFile, err := os.Create(path.Join(loggingDir, fname)) //nolint:gosec // log paths from trusted plugin config
-	if err != nil {
-		logFile.Close() //nolint:errcheck // best-effort cleanup on error path
-		return nil, err
-	}
-	sink := io.MultiWriter(os.Stderr, logFile, debugFile)
-	return newWorkbenchLogger(name, sink, level), nil
+	return newWorkbenchLogger(name, io.MultiWriter(os.Stderr, logFile), cfg.Level), nil
 }
 
-// MustNewLogger is like NewLogger, but prints a message to standard error on
-// failure and then aborts. This is recommended.
-func MustNewLogger(name string, debug bool, loggingDir string) *slog.Logger {
-	lgr, err := NewLogger(name, debug, loggingDir)
+// MustNewLogger is like NewLogger but logs the error to stderr and calls
+// os.Exit(1) on failure. Deferred functions do not run. This is recommended
+// for plugin main functions.
+func MustNewLogger(name string, cfg Config) *slog.Logger {
+	lgr, err := NewLogger(name, cfg)
 	if err != nil {
-		lgr, _ = NewLogger(name, true, "") //nolint:errcheck // stderr-only fallback cannot fail
-		lgr.Error("Failed to load configuration", "error", err)
+		// stderr-only NewLogger cannot fail; if it somehow does, fall back to fmt.
+		fallback, fallbackErr := NewLogger(name, Config{Type: DestinationStderr, Level: slog.LevelDebug})
+		if fallbackErr != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: failed to initialize logger: %v (fallback also failed: %v)\n", err, fallbackErr)
+			os.Exit(1)
+		}
+		fallback.Error("Failed to initialize logger", "error", err)
 		os.Exit(1)
 	}
 	return lgr
 }
 
-// newWorkbenchLogger returns an [slog.Logger] with a handler that writes Workbench-style logs.
 func newWorkbenchLogger(programID string, sink io.Writer, level slog.Level) *slog.Logger {
 	handler := &workbenchHandler{
 		sink:      sink,
@@ -75,7 +60,6 @@ func newWorkbenchLogger(programID string, sink io.Writer, level slog.Level) *slo
 	return slog.New(handler)
 }
 
-// workbenchHandler is a [slog.Handler] that writes Workbench-style logs.
 type workbenchHandler struct {
 	sink      io.Writer
 	level     slog.Level
@@ -84,12 +68,10 @@ type workbenchHandler struct {
 	groups    []string
 }
 
-// Enabled returns true if a message at a [slog.Level] would be logged.
 func (h *workbenchHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.level
 }
 
-// Handle handles a [slog.Record].
 func (h *workbenchHandler) Handle(_ context.Context, r slog.Record) error {
 	prefix := strings.Join(append(h.groups, ""), ".")
 	var props []string
@@ -110,30 +92,27 @@ func (h *workbenchHandler) Handle(_ context.Context, r slog.Record) error {
 	return err
 }
 
-// Level returns the current [slog.Level].
 func (h *workbenchHandler) Level() slog.Level {
 	return h.level
 }
 
-// WithAttrs returns a new [workbenchHandler] with additional attributes.
 func (h *workbenchHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &workbenchHandler{
 		sink:      h.sink,
 		level:     h.level,
 		programID: h.programID,
-		attrs:     append(h.attrs, attrs...),
+		attrs:     append(h.attrs[:len(h.attrs):len(h.attrs)], attrs...),
 		groups:    h.groups,
 	}
 }
 
-// WithGroup returns a new [workbenchHandler] with an additional group.
 func (h *workbenchHandler) WithGroup(name string) slog.Handler {
 	return &workbenchHandler{
 		sink:      h.sink,
 		level:     h.level,
 		programID: h.programID,
 		attrs:     h.attrs,
-		groups:    append(h.groups, name),
+		groups:    append(h.groups[:len(h.groups):len(h.groups)], name),
 	}
 }
 

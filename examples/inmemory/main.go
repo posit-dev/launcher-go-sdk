@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -359,8 +360,26 @@ func main() {
 	options := &launcher.DefaultOptions{}
 	launcher.MustLoadOptions(options, "inmemory")
 
-	// Create a logger that writes to stderr and log files
-	lgr := logger.MustNewLogger("inmemory", options.Debug, options.LoggingDir)
+	// Build defaults from the legacy CLI flags so that --enable-debug-logging and
+	// --logging-dir still work when logging.conf is absent.
+	logDefaults := logger.Config{
+		Level: slog.LevelInfo,
+		Type:  logger.DestinationFile,
+		Dir:   options.LoggingDir,
+	}
+	if options.Debug {
+		logDefaults.Level = slog.LevelDebug
+	}
+	logCfg, err := logger.LoadConfig("inmemory", logDefaults)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load logging config: %v\n", err)
+		os.Exit(1)
+	}
+	// --enable-debug-logging enforces at least DEBUG regardless of logging.conf.
+	if options.Debug && logCfg.Level > slog.LevelDebug {
+		logCfg.Level = slog.LevelDebug
+	}
+	lgr := logger.MustNewLogger("inmemory", logCfg)
 	lgr.Info("Starting InMemory plugin")
 
 	// Create the job cache
