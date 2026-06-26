@@ -28,7 +28,7 @@ type testPlugin struct {
 func newTestPlugin(t *testing.T) *testPlugin {
 	t.Helper()
 	lgr := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	c, err := cache.NewJobCache(context.Background(), lgr)
+	c, err := cache.NewJobCache(lgr)
 	if err != nil {
 		t.Fatalf("failed to create job cache: %v", err)
 	}
@@ -38,7 +38,9 @@ func newTestPlugin(t *testing.T) *testPlugin {
 	}
 	t.Cleanup(func() {
 		tp.wg.Wait()
-		_ = c.Close()
+		if err := c.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
 	})
 	return tp
 }

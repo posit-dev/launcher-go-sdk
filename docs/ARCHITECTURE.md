@@ -382,7 +382,7 @@ The plugin uses a local prometheus histogram as a cache, accumulating observatio
 The cache uses in-memory storage. The scheduler is the source of truth for job state — the cache is a local working copy that plugins populate at startup and keep in sync during operation.
 
 ```go
-cache, _ := cache.NewJobCache(ctx, lgr)
+cache, _ := cache.NewJobCache(lgr)
 ```
 
 Plugins should implement `BootstrappedPlugin` and use `Bootstrap()` to re-read active jobs from the scheduler into the cache before accepting requests. A periodic sync loop (e.g., every 5 seconds) should then reconcile cache state with the scheduler during normal operation. This is consistent with how all existing Launcher plugins (Local, Kubernetes, Slurm) operate.

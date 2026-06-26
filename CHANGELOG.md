@@ -11,10 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin API 3.8.0**: `PlacementConstraint` gains an optional `Default` field (`"defaultValue"` on the wire). The Launcher uses this to surface a pre-fill hint for constraint inputs in Workbench.
 
 ### Changed
+- **BREAKING**: `cache.NewJobCache` no longer accepts a `context.Context` parameter. The context implied the cache reacted to cancellation, but `Close()` was always required and sufficient to stop it. `Close()` is now the sole lifecycle control; callers must call it to release resources and stop the cache's internal goroutine.
 - **Minimum Go version is now 1.25** (was 1.24). Go 1.24 is no longer supported; the `go` directive in `go.mod` is now `1.25.0`.
 
 ### CI
 - Test matrix now runs against Go 1.25 and 1.26 (dropped 1.24, added 1.26).
+
+### Fixed
+- Goroutine leak in `cache.JobCache` when the passed context was canceled without calling `Close()` ([#18](https://github.com/posit-dev/launcher-go-sdk/issues/18)); the context parameter has been removed
 
 ## [0.2.0] - 2026-05-27
 

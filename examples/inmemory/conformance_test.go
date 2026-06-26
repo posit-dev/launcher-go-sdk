@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"testing"
@@ -15,14 +14,16 @@ import (
 func newTestPlugin(t *testing.T) *InMemoryPlugin {
 	t.Helper()
 	lgr := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	c, err := cache.NewJobCache(context.Background(), lgr)
+	c, err := cache.NewJobCache(lgr)
 	if err != nil {
 		t.Fatalf("failed to create job cache: %v", err)
 	}
 	p := &InMemoryPlugin{cache: c}
 	t.Cleanup(func() {
 		p.wg.Wait()
-		_ = c.Close()
+		if err := c.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
 	})
 	return p
 }

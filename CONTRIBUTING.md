@@ -271,9 +271,9 @@ type JobCache struct {
 
 // NewJobCache creates a new in-memory job cache instance.
 //
-// The cache starts background goroutines for pub/sub management. These
-// goroutines are stopped when ctx is cancelled.
-func NewJobCache(ctx context.Context, lgr *slog.Logger) (*JobCache, error) {
+// The cache starts a background goroutine for pub/sub management. The caller
+// must call Close() to stop the goroutine and release resources.
+func NewJobCache(lgr *slog.Logger) (*JobCache, error) {
     // ...
 }
 ```
