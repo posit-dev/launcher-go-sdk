@@ -366,10 +366,11 @@ func TestNode_Online(t *testing.T) {
 func TestJob_StructFields(t *testing.T) {
 	// Test that Job struct has expected fields by creating an instance
 	job := &Job{
-		ID:     "test-123",
-		User:   "alice",
-		Status: StatusPending,
-		Name:   "test-job",
+		ID:        "test-123",
+		User:      "alice",
+		Status:    StatusPending,
+		Name:      "test-job",
+		SystemJob: true,
 	}
 
 	if job.ID != "test-123" {
@@ -386,6 +387,58 @@ func TestJob_StructFields(t *testing.T) {
 
 	if job.Name != "test-job" {
 		t.Errorf("Job.Name = %q, want %q", job.Name, "test-job")
+	}
+
+	if !job.SystemJob {
+		t.Errorf("Job.SystemJob = %v, want true", job.SystemJob)
+	}
+}
+
+func TestJob_SystemJob_JSONRoundTrip(t *testing.T) {
+	original := Job{ID: "test-123", SystemJob: true}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	if !strings.Contains(string(data), `"systemJob":true`) {
+		t.Errorf("marshaled JSON = %s, want it to contain %q", data, `"systemJob":true`)
+	}
+
+	var got Job
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got.SystemJob != original.SystemJob {
+		t.Errorf("round-trip SystemJob = %v, want %v", got.SystemJob, original.SystemJob)
+	}
+}
+
+func TestJob_SystemJob_JSONOmitsWhenFalse(t *testing.T) {
+	job := Job{ID: "test-123"}
+	data, err := json.Marshal(job)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if strings.Contains(string(data), "systemJob") {
+		t.Errorf("marshaled JSON %s should not contain systemJob when false", data)
+	}
+}
+
+func TestJob_WithFields_SystemJob(t *testing.T) {
+	job := &Job{ID: "test-123", SystemJob: true, Name: "test-job"}
+
+	scrubbed := job.WithFields([]string{"systemJob"})
+
+	if scrubbed.ID != "test-123" {
+		t.Errorf("WithFields scrubbed.ID = %q, want %q", scrubbed.ID, "test-123")
+	}
+	if !scrubbed.SystemJob {
+		t.Errorf("WithFields scrubbed.SystemJob = %v, want true", scrubbed.SystemJob)
+	}
+	if scrubbed.Name != "" {
+		t.Errorf("WithFields scrubbed.Name = %q, want empty (not requested)", scrubbed.Name)
 	}
 }
 
