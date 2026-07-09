@@ -239,6 +239,58 @@ func TestJobOutput(t *testing.T) {
 	}
 }
 
+func TestJobOutputJSON(t *testing.T) {
+	// The Launcher encodes outputType as an integer enum on the wire.
+	// JobOutput is a plain int, so encoding/json handles both directions
+	// natively; this guards against a custom (un)marshaler reintroducing
+	// the string form.
+	tests := []struct {
+		value JobOutput
+		json  string
+	}{
+		{OutputStdout, `0`},
+		{OutputStderr, `1`},
+		{OutputBoth, `2`},
+	}
+	for _, tt := range tests {
+		got, err := json.Marshal(tt.value)
+		if err != nil {
+			t.Fatalf("Marshal(%d) unexpected error: %v", tt.value, err)
+		}
+		if string(got) != tt.json {
+			t.Errorf("Marshal(%d) = %s, want %s", tt.value, got, tt.json)
+		}
+
+		var back JobOutput
+		if err := json.Unmarshal([]byte(tt.json), &back); err != nil {
+			t.Fatalf("Unmarshal(%s) unexpected error: %v", tt.json, err)
+		}
+		if back != tt.value {
+			t.Errorf("Unmarshal(%s) = %d, want %d", tt.json, back, tt.value)
+		}
+	}
+}
+
+func TestJobOutputRequestDecode(t *testing.T) {
+	// A request as the Launcher encodes it: outputType is an integer, and it
+	// is optional (the Launcher defaults it to "both" when absent).
+	var withField, missingField struct {
+		Output JobOutput `json:"outputType"`
+	}
+	if err := json.Unmarshal([]byte(`{"outputType":1}`), &withField); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if withField.Output != OutputStderr {
+		t.Errorf("outputType = %d, want %d", withField.Output, OutputStderr)
+	}
+	if err := json.Unmarshal([]byte(`{}`), &missingField); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if missingField.Output != OutputStdout {
+		t.Errorf("absent outputType = %d, want zero value %d", missingField.Output, OutputStdout)
+	}
+}
+
 func TestJobOperation(t *testing.T) {
 	// Test that JobOperation constants are defined
 	tests := []struct {
