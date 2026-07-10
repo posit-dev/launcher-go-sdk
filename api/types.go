@@ -231,18 +231,24 @@ func (f *JobFilter) Includes(job *Job) bool {
 // JobOutput represents the type of output stream (stdout, stderr, or both).
 type JobOutput int
 
-// JobOutput constants for output stream types.
+// JobOutput constants for output stream types. The values are fixed by the
+// Launcher Plugin API wire protocol (outputType is sent as this integer), so
+// they are assigned explicitly rather than derived positionally.
 const (
 	// OutputStdout represents the standard output stream.
-	OutputStdout JobOutput = iota
+	OutputStdout JobOutput = 0
 
 	// OutputStderr represents the standard error stream.
-	OutputStderr
+	OutputStderr JobOutput = 1
 
-	// OutputBoth represents both stdout and stderr streams combined.
-	OutputBoth
+	// OutputBoth represents both stdout and stderr streams combined. The
+	// Launcher calls this "both" on input but "mixed" in output; on the wire it
+	// is just the integer 2, so a single constant covers both.
+	OutputBoth JobOutput = 2
 )
 
+// String returns the human-readable name of the output stream. OutputBoth is
+// "mixed", matching the Launcher's output metadata (its input name is "both").
 func (o JobOutput) String() string {
 	switch o {
 	case OutputStdout:
@@ -253,26 +259,6 @@ func (o JobOutput) String() string {
 		return "mixed"
 	}
 	return "mixed"
-}
-
-// MarshalText implements `encoding.TextMarshaler`.
-func (o *JobOutput) MarshalText() ([]byte, error) {
-	return []byte(o.String()), nil
-}
-
-// UnmarshalText implements `encoding.TextUnmarshaler`.
-func (o *JobOutput) UnmarshalText(text []byte) error {
-	switch string(text) {
-	case "stdout":
-		*o = OutputStdout
-	case "stderr":
-		*o = OutputStderr
-	case "mixed":
-		*o = OutputBoth
-	default:
-		return fmt.Errorf("invalid output type: %s", string(text))
-	}
-	return nil
 }
 
 // JobID is a string-based job identifier. The special value "*" (see
