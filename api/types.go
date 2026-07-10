@@ -452,6 +452,10 @@ type Job struct {
 	// "custom".
 	Profile string `json:"resourceProfile,omitempty"`
 
+	// SystemJob marks a system/utility job that bypasses resource-profile
+	// enforcement. Only honored on privileged requests.
+	SystemJob bool `json:"systemJob,omitempty"`
+
 	// The persistent identifier for the Launcher instance that submitted
 	// this Job. Set by the Launcher; plugins must preserve and return
 	// this value unchanged.
@@ -533,6 +537,8 @@ func (job *Job) WithFields(fields []string) *Job {
 			scrubbed.Metadata = job.Metadata
 		case "resourceProfile":
 			scrubbed.Profile = job.Profile
+		case "systemJob":
+			scrubbed.SystemJob = job.SystemJob
 		case "instanceId":
 			scrubbed.InstanceID = job.InstanceID
 		}
@@ -868,7 +874,7 @@ type Version struct {
 
 // APIVersion is the Launcher plugin API version supported by the types defined
 // in this package.
-var APIVersion = Version{Major: 3, Minor: 8, Patch: 0}
+var APIVersion = Version{Major: 3, Minor: 9, Patch: 0}
 
 // ConfigReloadErrorType classifies config reload errors.
 type ConfigReloadErrorType int
