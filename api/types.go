@@ -515,7 +515,7 @@ func (job *Job) WithFields(fields []string) *Job {
 			scrubbed.Stdin = job.Stdin
 		case "args":
 			scrubbed.Args = job.Args
-		case "env":
+		case "environment":
 			scrubbed.Env = job.Env
 		case "placementConstraints":
 			scrubbed.Constraints = job.Constraints
