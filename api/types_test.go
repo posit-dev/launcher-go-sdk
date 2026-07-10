@@ -3,6 +3,7 @@ package api //nolint:revive // short package name is intentional for this API pa
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -535,6 +536,17 @@ func TestJob_WithFields(t *testing.T) {
 		}
 	})
 
+	t.Run("field names match case-sensitively", func(t *testing.T) {
+		// Matches the reference Launcher plugins: the built-in Local/Kubernetes
+		// plugins (job_launcher/impls/ApiBase.cpp) filter projection fields with
+		// an exact, case-sensitive comparison against the lowercase JSON member
+		// names. A non-canonical case such as "Status" is not recognized.
+		got := job.WithFields([]string{"Status"})
+		if got.Status != "" {
+			t.Errorf("WithFields([Status]).Status = %q, want empty (only lowercase \"status\" matches)", got.Status)
+		}
+	})
+
 	t.Run("unknown field is ignored", func(t *testing.T) {
 		got := job.WithFields([]string{"nonexistent"})
 		if got.ID != job.ID {
@@ -544,6 +556,34 @@ func TestJob_WithFields(t *testing.T) {
 			t.Errorf("WithFields([nonexistent]) populated unexpected fields: %+v", got)
 		}
 	})
+}
+
+// TestJobFieldSettersMatchJSONTags audits jobFieldSetters against the Job
+// struct's JSON tags so a projectable field can never be silently dropped by a
+// name mismatch (the class of bug behind "env" vs "environment"). Every
+// projectable Job field must have a setter keyed by its exact JSON name, and
+// every setter key must correspond to a real Job JSON field.
+func TestJobFieldSettersMatchJSONTags(t *testing.T) {
+	jsonNames := map[string]bool{}
+	rt := reflect.TypeFor[Job]()
+	for i := 0; i < rt.NumField(); i++ {
+		tag := rt.Field(i).Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		// "-" is a non-wire field (Misc); "id" is always included by
+		// WithFields and intentionally has no setter.
+		if name == "" || name == "-" || name == "id" {
+			continue
+		}
+		jsonNames[name] = true
+		if _, ok := jobFieldSetters[name]; !ok {
+			t.Errorf("Job JSON field %q has no jobFieldSetters entry", name)
+		}
+	}
+	for key := range jobFieldSetters {
+		if !jsonNames[key] {
+			t.Errorf("jobFieldSetters key %q does not match any Job JSON field", key)
+		}
+	}
 }
 
 func TestContainer_StructFields(t *testing.T) {
