@@ -466,81 +466,65 @@ type Job struct {
 	Misc map[string]interface{} `json:"-"`
 }
 
+// jobFieldSetters maps a Launcher wire field name to a function that copies
+// that field from src into dst. Keys are exactly the Job struct's JSON field
+// names (the `json:"..."` tags on Job).
+//
+// Matching is case-sensitive against these canonical names, consistent with
+// the reference Launcher plugins (the built-in Local/Kubernetes/Slurm plugins
+// and the C++ Plugin SDK all filter projection fields case-sensitively against
+// the lowercase JSON member names). The canonical name for each field is its
+// JSON name, e.g. "status" (not "Status") and "environment" (not "env").
+var jobFieldSetters = map[string]func(dst, src *Job){
+	"cluster":              func(d, s *Job) { d.Cluster = s.Cluster },
+	"name":                 func(d, s *Job) { d.Name = s.Name },
+	"user":                 func(d, s *Job) { d.User = s.User },
+	"group":                func(d, s *Job) { d.Group = s.Group },
+	"queues":               func(d, s *Job) { d.Queues = s.Queues },
+	"workingDirectory":     func(d, s *Job) { d.WorkDir = s.WorkDir },
+	"container":            func(d, s *Job) { d.Container = s.Container },
+	"initContainers":       func(d, s *Job) { d.InitContainers = s.InitContainers },
+	"host":                 func(d, s *Job) { d.Host = s.Host },
+	"status":               func(d, s *Job) { d.Status = s.Status },
+	"statusMessage":        func(d, s *Job) { d.StatusMsg = s.StatusMsg },
+	"statusCode":           func(d, s *Job) { d.StatusCode = s.StatusCode },
+	"pid":                  func(d, s *Job) { d.Pid = s.Pid },
+	"exitCode":             func(d, s *Job) { d.ExitCode = s.ExitCode },
+	"command":              func(d, s *Job) { d.Command = s.Command },
+	"exe":                  func(d, s *Job) { d.Exe = s.Exe },
+	"stdoutFile":           func(d, s *Job) { d.Stdout = s.Stdout },
+	"stderrFile":           func(d, s *Job) { d.Stderr = s.Stderr },
+	"stdin":                func(d, s *Job) { d.Stdin = s.Stdin },
+	"args":                 func(d, s *Job) { d.Args = s.Args },
+	"environment":          func(d, s *Job) { d.Env = s.Env },
+	"placementConstraints": func(d, s *Job) { d.Constraints = s.Constraints },
+	"lastUpdateTime":       func(d, s *Job) { d.LastUpdated = s.LastUpdated },
+	"submissionTime":       func(d, s *Job) { d.Submitted = s.Submitted },
+	"exposedPorts":         func(d, s *Job) { d.Ports = s.Ports },
+	"mounts":               func(d, s *Job) { d.Mounts = s.Mounts },
+	"config":               func(d, s *Job) { d.Config = s.Config },
+	"resourceLimits":       func(d, s *Job) { d.Limits = s.Limits },
+	"tags":                 func(d, s *Job) { d.Tags = s.Tags },
+	"metadata":             func(d, s *Job) { d.Metadata = s.Metadata },
+	"resourceProfile":      func(d, s *Job) { d.Profile = s.Profile },
+	"systemJob":            func(d, s *Job) { d.SystemJob = s.SystemJob },
+	"instanceId":           func(d, s *Job) { d.InstanceID = s.InstanceID },
+}
+
 // WithFields returns a copy of the job with only the given fields populated.
-// When fields is empty it returns the original job.
+// When fields is empty it returns the original job. The job ID is always
+// populated, as the Launcher protocol requires it in every job response.
+//
+// Field names are matched case-sensitively against the Job's JSON field names
+// (see [jobFieldSetters]). Unrecognized field names are ignored.
 func (job *Job) WithFields(fields []string) *Job {
 	if len(fields) == 0 {
 		return job
 	}
 	scrubbed := &Job{ID: job.ID} // ID is required.
 	for _, f := range fields {
-		switch f {
-		case "cluster":
-			scrubbed.Cluster = job.Cluster
-		case "name":
-			scrubbed.Name = job.Name
-		case "user":
-			scrubbed.User = job.User
-		case "group":
-			scrubbed.Group = job.Group
-		case "queues":
-			scrubbed.Queues = job.Queues
-		case "workingDirectory":
-			scrubbed.WorkDir = job.WorkDir
-		case "container":
-			scrubbed.Container = job.Container
-		case "initContainers":
-			scrubbed.InitContainers = job.InitContainers
-		case "host":
-			scrubbed.Host = job.Host
-		case "status":
-			scrubbed.Status = job.Status
-		case "statusMessage":
-			scrubbed.StatusMsg = job.StatusMsg
-		case "statusCode":
-			scrubbed.StatusCode = job.StatusCode
-		case "pid":
-			scrubbed.Pid = job.Pid
-		case "exitCode":
-			scrubbed.ExitCode = job.ExitCode
-		case "command":
-			scrubbed.Command = job.Command
-		case "exe":
-			scrubbed.Exe = job.Exe
-		case "stdoutFile":
-			scrubbed.Stdout = job.Stdout
-		case "stderrFile":
-			scrubbed.Stderr = job.Stderr
-		case "stdin":
-			scrubbed.Stdin = job.Stdin
-		case "args":
-			scrubbed.Args = job.Args
-		case "env":
-			scrubbed.Env = job.Env
-		case "placementConstraints":
-			scrubbed.Constraints = job.Constraints
-		case "lastUpdateTime":
-			scrubbed.LastUpdated = job.LastUpdated
-		case "submissionTime":
-			scrubbed.Submitted = job.Submitted
-		case "exposedPorts":
-			scrubbed.Ports = job.Ports
-		case "mounts":
-			scrubbed.Mounts = job.Mounts
-		case "config":
-			scrubbed.Config = job.Config
-		case "resourceLimits":
-			scrubbed.Limits = job.Limits
-		case "tags":
-			scrubbed.Tags = job.Tags
-		case "metadata":
-			scrubbed.Metadata = job.Metadata
-		case "resourceProfile":
-			scrubbed.Profile = job.Profile
-		case "systemJob":
-			scrubbed.SystemJob = job.SystemJob
-		case "instanceId":
-			scrubbed.InstanceID = job.InstanceID
+		if set, ok := jobFieldSetters[f]; ok {
+			set(scrubbed, job)
 		}
 	}
 	return scrubbed

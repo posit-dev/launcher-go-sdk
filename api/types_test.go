@@ -3,8 +3,10 @@ package api //nolint:revive // short package name is intentional for this API pa
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTerminalStatus(t *testing.T) {
@@ -463,6 +465,124 @@ func TestJobFilter_StructFields(t *testing.T) {
 
 	if filter.Tags[0] != "ml-training" {
 		t.Errorf("JobFilter.Tags[0] = %q, want %q", filter.Tags[0], "ml-training")
+	}
+}
+
+func TestJob_WithFields(t *testing.T) {
+	now := time.Now().UTC()
+	pid := 4321
+	job := &Job{
+		ID:        "job-1",
+		User:      "alice",
+		Status:    StatusRunning,
+		Pid:       &pid,
+		Submitted: &now,
+		Tags:      []string{"s12345678904321", "rstudio-r-session-id:s12345678904321"},
+		Env:       []Env{{Name: "FOO", Value: "bar"}},
+	}
+
+	t.Run("empty fields returns original", func(t *testing.T) {
+		if got := job.WithFields(nil); got != job {
+			t.Errorf("WithFields(nil) = %p, want original %p", got, job)
+		}
+		if got := job.WithFields([]string{}); got != job {
+			t.Errorf("WithFields([]) = %p, want original %p", got, job)
+		}
+	})
+
+	t.Run("id always included", func(t *testing.T) {
+		// A projection that lists only "status" must still carry the ID, per
+		// the Launcher protocol (id is required in every job response).
+		got := job.WithFields([]string{"status"})
+		if got.ID != job.ID {
+			t.Errorf("WithFields([status]).ID = %q, want %q", got.ID, job.ID)
+		}
+		if got.Status != StatusRunning {
+			t.Errorf("WithFields([status]).Status = %q, want %q", got.Status, StatusRunning)
+		}
+		if got.User != "" {
+			t.Errorf("WithFields([status]).User = %q, want empty", got.User)
+		}
+	})
+
+	t.Run("tags preserved when requested", func(t *testing.T) {
+		// Mirrors the fields rserver requests for session association:
+		// user, submissionTime, pid, tags.
+		got := job.WithFields([]string{"user", "submissionTime", "pid", "tags"})
+		if len(got.Tags) != len(job.Tags) {
+			t.Fatalf("WithFields tags = %v, want %v", got.Tags, job.Tags)
+		}
+		for i, tag := range job.Tags {
+			if got.Tags[i] != tag {
+				t.Errorf("WithFields tags[%d] = %q, want %q", i, got.Tags[i], tag)
+			}
+		}
+	})
+
+	t.Run("tags dropped when not requested", func(t *testing.T) {
+		// A projection that omits tags legitimately strips them (only id is
+		// guaranteed). This matches the reference SDK behavior.
+		got := job.WithFields([]string{"status"})
+		if got.Tags != nil {
+			t.Errorf("WithFields([status]).Tags = %v, want nil", got.Tags)
+		}
+	})
+
+	t.Run("environment field name maps to Env", func(t *testing.T) {
+		// The wire/JSON field name is "environment"; WithFields must match it.
+		got := job.WithFields([]string{"environment"})
+		if len(got.Env) != 1 || got.Env[0].Name != "FOO" {
+			t.Errorf("WithFields([environment]).Env = %v, want [{FOO bar}]", got.Env)
+		}
+	})
+
+	t.Run("field names match case-sensitively", func(t *testing.T) {
+		// Matches the reference Launcher plugins: the built-in Local/Kubernetes
+		// plugins (job_launcher/impls/ApiBase.cpp) filter projection fields with
+		// an exact, case-sensitive comparison against the lowercase JSON member
+		// names. A non-canonical case such as "Status" is not recognized.
+		got := job.WithFields([]string{"Status"})
+		if got.Status != "" {
+			t.Errorf("WithFields([Status]).Status = %q, want empty (only lowercase \"status\" matches)", got.Status)
+		}
+	})
+
+	t.Run("unknown field is ignored", func(t *testing.T) {
+		got := job.WithFields([]string{"nonexistent"})
+		if got.ID != job.ID {
+			t.Errorf("WithFields([nonexistent]).ID = %q, want %q", got.ID, job.ID)
+		}
+		if got.Status != "" || got.User != "" {
+			t.Errorf("WithFields([nonexistent]) populated unexpected fields: %+v", got)
+		}
+	})
+}
+
+// TestJobFieldSettersMatchJSONTags audits jobFieldSetters against the Job
+// struct's JSON tags so a projectable field can never be silently dropped by a
+// name mismatch (the class of bug behind "env" vs "environment"). Every
+// projectable Job field must have a setter keyed by its exact JSON name, and
+// every setter key must correspond to a real Job JSON field.
+func TestJobFieldSettersMatchJSONTags(t *testing.T) {
+	jsonNames := map[string]bool{}
+	rt := reflect.TypeFor[Job]()
+	for i := 0; i < rt.NumField(); i++ {
+		tag := rt.Field(i).Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		// "-" is a non-wire field (Misc); "id" is always included by
+		// WithFields and intentionally has no setter.
+		if name == "" || name == "-" || name == "id" {
+			continue
+		}
+		jsonNames[name] = true
+		if _, ok := jobFieldSetters[name]; !ok {
+			t.Errorf("Job JSON field %q has no jobFieldSetters entry", name)
+		}
+	}
+	for key := range jobFieldSetters {
+		if !jsonNames[key] {
+			t.Errorf("jobFieldSetters key %q does not match any Job JSON field", key)
+		}
 	}
 }
 

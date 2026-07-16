@@ -162,6 +162,77 @@ func TestSubscriberCanceledContextCloseGuard(t *testing.T) {
 	}
 }
 
+// TestJobsForUserPreservesSessionTags verifies that a session-association
+// query returns the job with its tags intact. rserver's getSessionJob filters
+// by tags + "Running" status with an empty field projection; the Launcher
+// protocol guarantees only "id" under a projection, but an empty projection
+// must return the full job (tags included) so rserver can correlate the job to
+// its session. Regression guard for session startup failing with
+// "noJobForSession".
+func TestJobsForUserPreservesSessionTags(t *testing.T) {
+	sessionID := "s12345678904321"
+	job := &api.Job{
+		ID:     "job-1",
+		User:   "alice",
+		Status: api.StatusRunning,
+		Tags:   []string{sessionID, "rstudio-r-session-id:" + sessionID},
+	}
+
+	tests := []struct {
+		name   string
+		filter *api.JobFilter
+	}{
+		{
+			// Mirrors LauncherClient::getSessionJob: tags + Running, no fields.
+			name: "empty fields (getSessionJob)",
+			filter: &api.JobFilter{
+				Tags:     []string{sessionID},
+				Statuses: []string{api.StatusRunning},
+			},
+		},
+		{
+			// Mirrors getActiveLauncherSessions: an explicit projection that
+			// includes tags.
+			name: "projection including tags",
+			filter: &api.JobFilter{
+				Tags:     []string{sessionID},
+				Statuses: []string{api.StatusRunning},
+				Fields:   []string{"user", "submissionTime", "pid", "tags"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newInMemoryStore()
+			if _, err := store.Update(string(job.ID), func(*api.Job) *api.Job {
+				return job
+			}); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+
+			var got []*api.Job
+			if err := store.JobsForUser("alice", tt.filter, func(jobs []*api.Job) {
+				got = jobs
+			}); err != nil {
+				t.Fatalf("JobsForUser: %v", err)
+			}
+
+			if len(got) != 1 {
+				t.Fatalf("JobsForUser returned %d jobs, want 1", len(got))
+			}
+			if len(got[0].Tags) != len(job.Tags) {
+				t.Fatalf("returned tags = %v, want %v", got[0].Tags, job.Tags)
+			}
+			for i, tag := range job.Tags {
+				if got[0].Tags[i] != tag {
+					t.Errorf("tags[%d] = %q, want %q", i, got[0].Tags[i], tag)
+				}
+			}
+		})
+	}
+}
+
 // TestDoubleCloseIsNoOp verifies that a second call to Close() is safe.
 func TestDoubleCloseIsNoOp(t *testing.T) {
 	lgr := slog.New(slog.DiscardHandler)
