@@ -61,6 +61,40 @@ func TestDefaultOptions_EnableDebugLogging(t *testing.T) {
 	}
 }
 
+// TestDefaultOptions_JobExpiryHours verifies that --job-expiry-hours accepts
+// fractional and integer values and is converted into a time.Duration.
+// The C++ Launcher treats job-expiry-hours as a float end-to-end (including
+// fractional and scientific-notation values cascaded to plugins at spawn), so
+// the Go SDK must parse it as a float64 rather than a uint to avoid dying at
+// startup (flag.Parse on flag.CommandLine is ExitOnError) on values like 0.5.
+func TestDefaultOptions_JobExpiryHours(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want time.Duration
+	}{
+		{"fractional", []string{"--job-expiry-hours", "0.5"}, 30 * time.Minute},
+		{"integer", []string{"--job-expiry-hours", "24"}, 24 * time.Hour},
+		{"default", nil, 24 * time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var opts DefaultOptions
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			opts.AddFlags(fs, "default")
+			if err := fs.Parse(tt.args); err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if err := opts.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if opts.JobExpiry != tt.want {
+				t.Errorf("JobExpiry = %v, want %v", opts.JobExpiry, tt.want)
+			}
+		})
+	}
+}
+
 // stubPlugin implements Plugin with no-op methods.
 type stubPlugin struct{}
 
