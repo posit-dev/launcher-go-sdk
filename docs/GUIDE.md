@@ -1020,7 +1020,32 @@ func (p *MyPlugin) ReloadConfig(ctx context.Context) error {
 }
 ```
 
-Plugins that do not implement this interface automatically send a success response. Error types help the Launcher classify failures: `ReloadErrorLoad` for file read errors, `ReloadErrorValidate` for invalid configuration, and `ReloadErrorSave` for errors persisting state. Returning a plain `error` (instead of `*ConfigReloadError`) defaults to `ReloadErrorUnknown`.
+Plugins that implement neither `ConfigReloadablePlugin` nor `SettingsReloadablePlugin` (below) are reported to the Launcher as not supporting config reload at all (`api.ReloadErrorRequestNotSupported`) — the SDK never claims a reload happened when the plugin has no way to perform one. Error types help the Launcher classify failures: `ReloadErrorLoad` for file read errors, `ReloadErrorValidate` for invalid configuration, and `ReloadErrorSave` for errors persisting state. Returning a plain `error` (instead of `*ConfigReloadError`) defaults to `ReloadErrorUnknown`.
+
+#### Dual-homed `[server]` settings and `SettingsReloadablePlugin`
+
+Some `[server]` settings are "dual-homed": the Launcher cascades them to every plugin as CLI args at spawn time (`job-expiry-hours`, `logging-dir`, `enable-debug-logging`, `server-user`, `scratch-path`, `heartbeat-interval-seconds`, `plugin-metrics-interval-seconds`), but a plugin's own config file can also set them, and the operator's own-conf value should win. The `settings` package resolves this precedence (own-conf > inherited > default) and reports which settings a reload actually applied versus which are only pending until the plugin restarts.
+
+To opt in, implement `launcher.SettingsReloadablePlugin` instead of (or in addition to) `ConfigReloadablePlugin`:
+
+```go
+type MyPlugin struct {
+    reloader *settings.Reloader
+    // ...
+}
+
+func (p *MyPlugin) SettingsReloader() *settings.Reloader {
+    return p.reloader
+}
+```
+
+Construct the `*settings.Reloader` once at startup with `settings.NewReloader(settings.Registry, ownConfSource, seedInherited, seedJobExpiryHours, logger)`, where `ownConfSource` is your own `settings.OwnConfSource` implementation (or `settings.IniOwnConfSource{Path: opts.ConfigFile}` if your own config is a flat INI file like the Launcher's own `.conf` format). When both interfaces are implemented, `SettingsReloadablePlugin` takes precedence — a plain `ReloadConfig` is never called — so put any plugin-specific reload work (profiles, etc.) in the returned `Reloader`'s `ApplyExtra` hook instead.
+
+Read the currently-resolved `job-expiry-hours` via `reloader.JobExpiry()` rather than caching `DefaultOptions.JobExpiry` once at startup, so your plugin's business logic observes reloads.
+
+**Known limitations, as of this SDK version:**
+- The SDK cannot apply `logging-dir` or `enable-debug-logging` on reload. Both are correctly resolved (value + provenance available via `reloader.LastResolved()`), but the `logger` package has no runtime reconfiguration surface (no adjustable level, no swappable/reopenable sink), so neither is ever added to a reload's `Applied` list. The C++ Launcher plugins do apply these two settings, so this is a real, currently-open parity gap — if you need to react to either changing, read it from `LastResolved()` yourself, e.g. from `ApplyExtra`.
+- The Go SDK writes no `.active` last-known-good artifacts for the resolved settings snapshot, unlike the C++ Launcher and its plugins (see the profile-backup pattern above, which is a separate, plugin-author-implemented mechanism).
 
 **Best practice: preserve last-known-good configuration.** When reloading file-based configuration, only replace your in-memory state after the new files have been successfully loaded and validated. This ensures that a malformed config file doesn't leave the plugin in a broken state — the previous working configuration stays active. The first-party plugins take this further by writing hidden backup copies of each profile file (e.g., `.launcher.local.profiles.conf.active`) at two points: once at startup after the initial successful load, and again after every successful reload. The startup copy seeds the backup so it exists before any reload is attempted. If your plugin uses file-based profiles, consider adopting the same pattern:
 
