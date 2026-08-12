@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plugin API 3.10.0**: Protocol/version parity for the Launcher's hot-reload of dual-homed `[server]` settings. `api.InheritedSettings` mirrors the Launcher's inherited-settings payload (`serverUser`, `enableDebugLogging`, `scratchPath`, `loggingDir`, `heartbeatIntervalSeconds`, `jobExpiryHours`, `pluginMetricsIntervalSeconds`, `includePluginMetricsIntervalSeconds`). `protocol.ConfigReloadRequest` gains `InheritedSettings` (a presence-aware `*api.InheritedSettings`, nil when the Launcher omits it) and `Generation`; `protocol.ConfigReloadResponse` gains `Applied`, `PendingRestart`, and `Generation`. `api.ConfigReloadErrorType` gains `ReloadErrorRequestNotSupported`. This is mechanical wire-shape parity only; consuming/resolving the inherited settings is not yet wired into the reload handler.
 - **Plugin API 3.9.0**: `Job` gains an optional `SystemJob` field (`"systemJob"` on the wire). Marks a system/utility job that bypasses resource-profile enforcement; only honored on privileged requests.
 - **Plugin API 3.8.0**: `PlacementConstraint` gains an optional `Default` field (`"defaultValue"` on the wire). The Launcher uses this to surface a pre-fill hint for constraint inputs in Workbench.
 

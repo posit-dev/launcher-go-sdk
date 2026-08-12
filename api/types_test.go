@@ -738,3 +738,62 @@ func TestJobConfig_StructFields(t *testing.T) {
 		t.Errorf("JobConfig.Value = %q, want %q", config.Value, "user@example.com")
 	}
 }
+
+func TestAPIVersion_Is_3_10_0(t *testing.T) {
+	// The Go SDK must mirror the C++ Launcher's plugin API version exactly;
+	// the Launcher bumped to 3.10.0 for the config-reload additive fields.
+	if APIVersion.Major != 3 || APIVersion.Minor != 10 || APIVersion.Patch != 0 {
+		t.Errorf("APIVersion = %d.%d.%d, want 3.10.0", APIVersion.Major, APIVersion.Minor, APIVersion.Patch)
+	}
+}
+
+func TestConfigReloadErrorType_RequestNotSupported(t *testing.T) {
+	if ReloadErrorRequestNotSupported != 4 {
+		t.Errorf("ReloadErrorRequestNotSupported = %d, want 4", int(ReloadErrorRequestNotSupported))
+	}
+	if got := ReloadErrorRequestNotSupported.String(); got != "request not supported" {
+		t.Errorf("ReloadErrorRequestNotSupported.String() = %q, want %q", got, "request not supported")
+	}
+}
+
+func TestInheritedSettings_JSONRoundTrip(t *testing.T) {
+	in := InheritedSettings{
+		ServerUser:                          "rstudio-server",
+		EnableDebugLogging:                  true,
+		ScratchPath:                         "/var/scratch",
+		LoggingDir:                          "/var/log/rstudio/launcher",
+		HeartbeatIntervalSeconds:            30,
+		JobExpiryHours:                      24.5,
+		PluginMetricsIntervalSeconds:        60,
+		IncludePluginMetricsIntervalSeconds: true,
+	}
+
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	wantKeys := []string{
+		"serverUser", "enableDebugLogging", "scratchPath", "loggingDir",
+		"heartbeatIntervalSeconds", "jobExpiryHours",
+		"pluginMetricsIntervalSeconds", "includePluginMetricsIntervalSeconds",
+	}
+	for _, k := range wantKeys {
+		if _, ok := got[k]; !ok {
+			t.Errorf("missing expected JSON key %q in %v", k, got)
+		}
+	}
+
+	var out InheritedSettings
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if out != in {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", out, in)
+	}
+}

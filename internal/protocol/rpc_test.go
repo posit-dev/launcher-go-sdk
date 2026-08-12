@@ -233,3 +233,233 @@ func TestNewConfigReloadResponse_ErrorTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigReloadRequest_RoundTrip_WithInheritedSettings(t *testing.T) {
+	req := &ConfigReloadRequest{
+		BaseUserRequest: BaseUserRequest{
+			BaseRequest: BaseRequest{
+				MessageType: requestTypePtr(requestConfigReload),
+				RequestID:   uint64Ptr(42),
+			},
+		},
+		Generation: 7,
+		InheritedSettings: &api.InheritedSettings{
+			ServerUser:                          "rstudio-server",
+			EnableDebugLogging:                  true,
+			ScratchPath:                         "/var/scratch",
+			LoggingDir:                          "/var/log/rstudio/launcher",
+			HeartbeatIntervalSeconds:            30,
+			JobExpiryHours:                      24.5,
+			PluginMetricsIntervalSeconds:        60,
+			IncludePluginMetricsIntervalSeconds: true,
+		},
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	parsed, err := RequestFromJSON(data)
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+
+	got, ok := parsed.(*ConfigReloadRequest)
+	if !ok {
+		t.Fatalf("expected *ConfigReloadRequest, got %T", parsed)
+	}
+
+	if got.Generation != 7 {
+		t.Errorf("Generation = %d, want 7", got.Generation)
+	}
+	if got.InheritedSettings == nil {
+		t.Fatal("InheritedSettings = nil, want non-nil")
+	}
+	want := req.InheritedSettings
+	is := got.InheritedSettings
+	if is.ServerUser != want.ServerUser ||
+		is.EnableDebugLogging != want.EnableDebugLogging ||
+		is.ScratchPath != want.ScratchPath ||
+		is.LoggingDir != want.LoggingDir ||
+		is.HeartbeatIntervalSeconds != want.HeartbeatIntervalSeconds ||
+		is.JobExpiryHours != want.JobExpiryHours ||
+		is.PluginMetricsIntervalSeconds != want.PluginMetricsIntervalSeconds ||
+		is.IncludePluginMetricsIntervalSeconds != want.IncludePluginMetricsIntervalSeconds {
+		t.Errorf("InheritedSettings round-trip mismatch: got %+v, want %+v", is, want)
+	}
+}
+
+func TestConfigReloadRequest_AbsentInheritedSettings_IsNil(t *testing.T) {
+	// This is the key presence-aware test: when the Launcher omits
+	// inheritedSettings entirely (as opposed to sending an empty object),
+	// the parsed request must have a NIL InheritedSettings pointer, not a
+	// zero-valued struct. Callers rely on nil to mean "nothing pushed down
+	// this time", not "reset everything to zero/default".
+	input := `{"messageType": 202, "requestId": 42, "requestUsername": "admin", "username": "testuser", "generation": 3}`
+
+	req, err := RequestFromJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+
+	cr, ok := req.(*ConfigReloadRequest)
+	if !ok {
+		t.Fatalf("expected *ConfigReloadRequest, got %T", req)
+	}
+
+	if cr.InheritedSettings != nil {
+		t.Errorf("InheritedSettings = %+v, want nil", cr.InheritedSettings)
+	}
+	if cr.Generation != 3 {
+		t.Errorf("Generation = %d, want 3", cr.Generation)
+	}
+}
+
+func TestConfigReloadRequest_NoGenerationOrInheritedSettings_Defaults(t *testing.T) {
+	// A request with none of the new fields at all (mimicking a pre-3.10.0
+	// Launcher, or a reload that carries nothing new) must still parse.
+	input := `{"messageType": 202, "requestId": 1, "requestUsername": "admin", "username": "testuser"}`
+
+	req, err := RequestFromJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+
+	cr, ok := req.(*ConfigReloadRequest)
+	if !ok {
+		t.Fatalf("expected *ConfigReloadRequest, got %T", req)
+	}
+
+	if cr.InheritedSettings != nil {
+		t.Errorf("InheritedSettings = %+v, want nil", cr.InheritedSettings)
+	}
+	if cr.Generation != 0 {
+		t.Errorf("Generation = %d, want 0", cr.Generation)
+	}
+}
+
+func TestConfigReloadRequest_UnknownFields_StillParses(t *testing.T) {
+	// Additive-safety: unknown extra fields (e.g. from a newer Launcher
+	// version) must not break parsing.
+	input := `{
+		"messageType": 202, "requestId": 5, "requestUsername": "admin", "username": "testuser",
+		"generation": 9,
+		"inheritedSettings": {
+			"serverUser": "rstudio-server",
+			"enableDebugLogging": false,
+			"scratchPath": "/scratch",
+			"loggingDir": "/log",
+			"heartbeatIntervalSeconds": 15,
+			"jobExpiryHours": 12,
+			"pluginMetricsIntervalSeconds": 30,
+			"includePluginMetricsIntervalSeconds": false,
+			"somethingBrandNewFromTheFuture": "ignored"
+		},
+		"somethingElseEntirely": {"a": 1}
+	}`
+
+	req, err := RequestFromJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+
+	cr, ok := req.(*ConfigReloadRequest)
+	if !ok {
+		t.Fatalf("expected *ConfigReloadRequest, got %T", req)
+	}
+	if cr.Generation != 9 {
+		t.Errorf("Generation = %d, want 9", cr.Generation)
+	}
+	if cr.InheritedSettings == nil {
+		t.Fatal("InheritedSettings = nil, want non-nil")
+	}
+	if cr.InheritedSettings.ServerUser != "rstudio-server" {
+		t.Errorf("ServerUser = %q, want %q", cr.InheritedSettings.ServerUser, "rstudio-server")
+	}
+}
+
+func TestNewConfigReloadResponse_WithAppliedAndPendingRestart(t *testing.T) {
+	resp := NewConfigReloadResponse(42, 7, api.ReloadErrorNone, "")
+	resp.Applied = []string{"loggingDir", "scratchPath"}
+	resp.PendingRestart = []string{"enableDebugLogging"}
+	resp.Generation = 11
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var got ConfigReloadResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if len(got.Applied) != 2 || got.Applied[0] != "loggingDir" || got.Applied[1] != "scratchPath" {
+		t.Errorf("Applied = %v, want [loggingDir scratchPath]", got.Applied)
+	}
+	if len(got.PendingRestart) != 1 || got.PendingRestart[0] != "enableDebugLogging" {
+		t.Errorf("PendingRestart = %v, want [enableDebugLogging]", got.PendingRestart)
+	}
+	if got.Generation != 11 {
+		t.Errorf("Generation = %d, want 11", got.Generation)
+	}
+}
+
+func TestNewConfigReloadResponse_EmptyAppliedAndPendingRestart(t *testing.T) {
+	resp := NewConfigReloadResponse(42, 7, api.ReloadErrorNone, "")
+	resp.Applied = []string{}
+	resp.PendingRestart = []string{}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	// Empty (non-nil) slices are omitted by omitempty just like nil ones;
+	// either way the field must not be present with garbage content.
+	if v, ok := got["applied"]; ok {
+		t.Errorf("applied = %v, want omitted for empty slice", v)
+	}
+	if v, ok := got["pendingRestart"]; ok {
+		t.Errorf("pendingRestart = %v, want omitted for empty slice", v)
+	}
+}
+
+func TestNewConfigReloadResponse_NoAppliedOrPendingRestart_Defaults(t *testing.T) {
+	// A response that never sets the new fields (pre-3.10.0-style behavior)
+	// must still parse and round-trip with nil/zero values.
+	resp := NewConfigReloadResponse(1, 2, api.ReloadErrorNone, "")
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var got ConfigReloadResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got.Applied != nil {
+		t.Errorf("Applied = %v, want nil", got.Applied)
+	}
+	if got.PendingRestart != nil {
+		t.Errorf("PendingRestart = %v, want nil", got.PendingRestart)
+	}
+	if got.Generation != 0 {
+		t.Errorf("Generation = %d, want 0", got.Generation)
+	}
+}
+
+func requestTypePtr(rt requestType) *requestType {
+	return &rt
+}
+
+func uint64Ptr(v uint64) *uint64 {
+	return &v
+}

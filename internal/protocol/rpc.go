@@ -207,6 +207,18 @@ type SetLoadBalancerNodesRequest struct {
 // ConfigReloadRequest is the config reload request.
 type ConfigReloadRequest struct {
 	BaseUserRequest
+
+	// InheritedSettings carries the Launcher's dual-homed [server] settings,
+	// when the Launcher has pushed them down as part of this reload. It is
+	// nil when the Launcher omits the field entirely (i.e. it has nothing to
+	// push down this time) — callers must not treat a nil value as "reset
+	// everything to zero/default".
+	InheritedSettings *api.InheritedSettings `json:"inheritedSettings,omitempty"`
+
+	// Generation is the Launcher's monotonically increasing config
+	// generation stamp for this reload. It defaults to 0 when the Launcher
+	// omits the field.
+	Generation uint `json:"generation,omitempty"`
 }
 
 type responseType int
@@ -436,6 +448,18 @@ type ConfigReloadResponse struct {
 	responseBase
 	ErrorType    api.ConfigReloadErrorType `json:"errorType"`
 	ErrorMessage string                    `json:"errorMessage"`
+
+	// Applied lists the names of inherited settings the plugin actually
+	// applied as part of this reload.
+	Applied []string `json:"applied,omitempty"`
+
+	// PendingRestart lists the names of inherited settings that changed but
+	// require a plugin restart to take effect.
+	PendingRestart []string `json:"pendingRestart,omitempty"`
+
+	// Generation echoes back the Launcher's config generation stamp that
+	// this response corresponds to.
+	Generation uint `json:"generation,omitempty"`
 }
 
 // NewConfigReloadResponse creates a new config reload response.

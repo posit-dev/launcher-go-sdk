@@ -858,7 +858,7 @@ type Version struct {
 
 // APIVersion is the Launcher plugin API version supported by the types defined
 // in this package.
-var APIVersion = Version{Major: 3, Minor: 9, Patch: 0}
+var APIVersion = Version{Major: 3, Minor: 10, Patch: 0}
 
 // ConfigReloadErrorType classifies config reload errors.
 type ConfigReloadErrorType int
@@ -874,6 +874,9 @@ const (
 	ReloadErrorValidate ConfigReloadErrorType = 2
 	// ReloadErrorSave indicates an error saving configuration state.
 	ReloadErrorSave ConfigReloadErrorType = 3
+	// ReloadErrorRequestNotSupported indicates the plugin does not support
+	// configuration reload at all.
+	ReloadErrorRequestNotSupported ConfigReloadErrorType = 4
 )
 
 // String returns a human-readable description of the error type.
@@ -889,9 +892,47 @@ func (e ConfigReloadErrorType) String() string {
 		return "validation error"
 	case ReloadErrorSave:
 		return "save error"
+	case ReloadErrorRequestNotSupported:
+		return "request not supported"
 	default:
 		return "unknown error"
 	}
+}
+
+// InheritedSettings represents the subset of the Launcher's [server] settings
+// that are "dual-homed": normally owned by the plugin's own config, but
+// inherited from the Launcher when the plugin does not set them itself. The
+// Launcher includes this in a [ConfigReload] (see internal/protocol) request
+// whenever it has a value to push down; plugins should only apply the fields
+// they actually rely on inheriting.
+type InheritedSettings struct {
+	// ServerUser is the OS user the Launcher process runs as.
+	ServerUser string `json:"serverUser"`
+
+	// EnableDebugLogging mirrors the Launcher's [server] enable-debug-logging.
+	EnableDebugLogging bool `json:"enableDebugLogging"`
+
+	// ScratchPath mirrors the Launcher's [server] scratch-path.
+	ScratchPath string `json:"scratchPath"`
+
+	// LoggingDir mirrors the Launcher's [server] logging-dir.
+	LoggingDir string `json:"loggingDir"`
+
+	// HeartbeatIntervalSeconds mirrors the Launcher's [server]
+	// heartbeat-interval-seconds.
+	HeartbeatIntervalSeconds uint `json:"heartbeatIntervalSeconds"`
+
+	// JobExpiryHours mirrors the Launcher's [server] job-expiry-hours.
+	JobExpiryHours float64 `json:"jobExpiryHours"`
+
+	// PluginMetricsIntervalSeconds mirrors the Launcher's [server]
+	// plugin-metrics-interval-seconds.
+	PluginMetricsIntervalSeconds uint `json:"pluginMetricsIntervalSeconds"`
+
+	// IncludePluginMetricsIntervalSeconds indicates whether
+	// PluginMetricsIntervalSeconds is meaningful for this plugin's cluster
+	// type; some cluster types do not support plugin metrics collection.
+	IncludePluginMetricsIntervalSeconds bool `json:"includePluginMetricsIntervalSeconds"`
 }
 
 // Parsing errors.
