@@ -366,6 +366,40 @@ func TestConfigReload_SettingsReloadablePlugin_AbsentInheritedSettingsDoesNotClo
 	}
 }
 
+// TestConfigReload_SettingsReloadablePlugin_NilReloader pins the fix for a
+// crash the reviewer found: a plugin that implements SettingsReloadablePlugin
+// but whose SettingsReloader() returns nil (a plugin-author bug - forgetting
+// to construct the Reloader, or an initialization-order mistake) must not
+// panic the handler. Before the fix, calling .Reload on a nil *settings.Reloader
+// dereferenced a nil pointer and crashed the whole plugin process on every
+// reload request, since launcher.go has no recover(). The chosen failure
+// mode is a classified ReloadErrorUnknown response (an unclassified/internal
+// error, distinct from ReloadErrorRequestNotSupported: the plugin DOES claim
+// to support settings reload by implementing the interface, so telling the
+// Launcher "not supported" would misrepresent an author bug as a deliberate
+// capability gap) with a message that names the actual problem, so the
+// Launcher gets a truthful, non-fatal response instead of a dead plugin.
+func TestConfigReload_SettingsReloadablePlugin_NilReloader(t *testing.T) {
+	p := &settingsReloadablePlugin{reloader: nil}
+
+	req := newConfigReloadRequestWithInherited(t, 20, nil, 5)
+
+	// The test itself is the regression guard: if the handler still
+	// panics, this call never returns and the test fails with a panic
+	// trace rather than a clean assertion failure.
+	result := runConfigReloadHandlerWithRequest(t, p, req)
+
+	if result.ErrorType != int(api.ReloadErrorUnknown) {
+		t.Errorf("errorType = %d, want %d (Unknown)", result.ErrorType, api.ReloadErrorUnknown)
+	}
+	if result.ErrorMessage == "" {
+		t.Error("errorMessage is empty, want an explanation naming the nil SettingsReloader")
+	}
+	if result.Generation != 5 {
+		t.Errorf("generation = %d, want 5 (echoed back even on this error)", result.Generation)
+	}
+}
+
 func containsStr(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {

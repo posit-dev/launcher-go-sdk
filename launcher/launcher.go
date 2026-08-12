@@ -569,7 +569,26 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 		case *protocol.ConfigReloadRequest:
 			w = newResponseWriter(req, ch)
 			if srPlugin, ok := p.(SettingsReloadablePlugin); ok {
-				report, err := srPlugin.SettingsReloader().Reload(ctx, r.InheritedSettings, r.Generation)
+				reloader := srPlugin.SettingsReloader()
+				if reloader == nil {
+					// The plugin claims to support settings reload by
+					// implementing SettingsReloadablePlugin, but supplied no
+					// Reloader - a plugin-author bug (e.g. forgot to
+					// construct one, or an initialization-order mistake),
+					// not something the Launcher asked for. Report it as an
+					// unclassified reload failure rather than
+					// ReloadErrorRequestNotSupported: RequestNotSupported
+					// would misrepresent this as "this plugin type doesn't
+					// do settings reload", when the plugin itself claims
+					// otherwise. Above all, never panic the whole plugin
+					// process on every reload request.
+					//nolint:errcheck // sendResponse currently always returns nil
+					w.WriteConfigReload(api.ReloadErrorUnknown,
+						"plugin implements SettingsReloadablePlugin but SettingsReloader() returned nil",
+						nil, nil, r.Generation)
+					return
+				}
+				report, err := reloader.Reload(ctx, r.InheritedSettings, r.Generation)
 				if err != nil {
 					var verr *settings.ValidationError
 					errType := api.ReloadErrorUnknown

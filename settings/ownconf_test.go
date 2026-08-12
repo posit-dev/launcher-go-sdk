@@ -44,14 +44,14 @@ func TestIniOwnConfSource_PresentKeys(t *testing.T) {
 	}
 }
 
-func TestIniOwnConfSource_BareFlagIsPresentAndTruthy(t *testing.T) {
-	// ini.v1's AllowBooleanKeys represents a bare "key" line (no "=value")
-	// as present with the string "true". This is a different literal than
-	// the C++ isolation parser's "" for the same shape, but both are
-	// treated as truthy by downstream bool parsing (see
-	// SettingsReloadRoutine.cpp's resolvedDebugLogging derivation, which
-	// accepts "" and "true" identically) — what matters for OwnConfSource's
-	// contract is that the key is PRESENT, which this asserts.
+func TestIniOwnConfSource_BareFlagIsEmptyString(t *testing.T) {
+	// A bare "key" line (no "=value") must resolve to "", exactly matching
+	// the C++ isolation parser (parseOwnConfKeysInIsolation in
+	// SettingsResolver.cpp: `option.value.empty() ? std::string() :
+	// option.value.front()`). C++ parity is a binding constraint for this
+	// package - ini.v1's own AllowBooleanKeys convention would represent
+	// this as the literal string "true" instead, which IniOwnConfSource
+	// must not surface (see markBareKeysAsEmpty).
 	path := writeConf(t, "enable-debug-logging\n")
 	src := IniOwnConfSource{Path: path, Keys: []string{"enable-debug-logging"}}
 
@@ -61,8 +61,29 @@ func TestIniOwnConfSource_BareFlagIsPresentAndTruthy(t *testing.T) {
 	if !ok {
 		t.Fatal("OwnConfKeys() missing enable-debug-logging")
 	}
-	if v != "true" {
-		t.Errorf("OwnConfKeys()[enable-debug-logging] = %q, want %q", v, "true")
+	if v != "" {
+		t.Errorf("OwnConfKeys()[enable-debug-logging] = %q, want %q (C++ parity)", v, "")
+	}
+}
+
+func TestIniOwnConfSource_BareFlagAmongAssignedKeys_OthersUnaffected(t *testing.T) {
+	// A bare flag for one requested key must not disturb parsing of other
+	// (assigned) keys in the same file, and an unrelated bare flag for a
+	// key nobody asked about must not break parsing either (ini.v1's
+	// AllowBooleanKeys stays enabled as a fallback for those).
+	path := writeConf(t, "enable-debug-logging\njob-expiry-hours=48\nsome-other-flag\n")
+	src := IniOwnConfSource{Path: path, Keys: []string{"enable-debug-logging", "job-expiry-hours"}}
+
+	got := src.OwnConfKeys()
+
+	if v, ok := got["enable-debug-logging"]; !ok || v != "" {
+		t.Errorf("OwnConfKeys()[enable-debug-logging] = (%q, %v), want (\"\", true)", v, ok)
+	}
+	if v, ok := got["job-expiry-hours"]; !ok || v != "48" {
+		t.Errorf("OwnConfKeys()[job-expiry-hours] = (%q, %v), want (48, true)", v, ok)
+	}
+	if _, ok := got["some-other-flag"]; ok {
+		t.Errorf("OwnConfKeys() included non-requested key some-other-flag: %v", got)
 	}
 }
 

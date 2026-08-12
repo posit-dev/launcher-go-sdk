@@ -1,7 +1,10 @@
 package settings
 
 import (
+	"errors"
 	"log/slog"
+	"os"
+	"strings"
 
 	"gopkg.in/ini.v1"
 )
@@ -25,10 +28,9 @@ type OwnConfSource interface {
 	// absent from the config must be absent from the returned map — never
 	// mapped to "" or a default — since [Resolve] determines provenance by
 	// the key's presence in this map, not by its value. A key present with
-	// no value token (a bare flag-style entry) should map to some
-	// implementation-defined truthy placeholder ("" or "true" are both
-	// fine, and are treated identically by this package's bool parsing) —
-	// what matters is that the key is present in the map at all.
+	// no value token (a bare flag-style entry) maps to "" — matching the
+	// C++ isolation parser (parseOwnConfKeysInIsolation), which yields an
+	// empty string for the same shape.
 	OwnConfKeys() map[string]string
 }
 
@@ -80,10 +82,32 @@ func (s IniOwnConfSource) OwnConfKeys() map[string]string {
 		keys = DualHomedKeys(Registry)
 	}
 
-	cfg, err := ini.LoadSources(ini.LoadOptions{Loose: true, AllowBooleanKeys: true}, s.Path)
+	raw, err := os.ReadFile(s.Path) //nolint:gosec // own-conf path is trusted plugin config
+	if err != nil {
+		// A missing file is silent, matching the C++ isolation parser's
+		// ownConfPath.exists() check (no own-conf file configured is not a
+		// failure worth logging). Any other read error (permission denied,
+		// path is a directory, ...) is logged as a best-effort failure.
+		if s.Logger != nil && !errors.Is(err, os.ErrNotExist) {
+			s.Logger.Warn("settings: failed to read own-conf file for reload provenance; treating as no keys present",
+				"path", s.Path, "error", err)
+		}
+		return result
+	}
+
+	// ini.v1's AllowBooleanKeys represents a bare "key" line (no "=value")
+	// as present with the literal value "true", which would disagree with
+	// the C++ isolation parser's "" for the same shape. Rewrite bare lines
+	// for the keys we actually care about into "key=" (an explicit empty
+	// value) before parsing, so ini.v1 reports "" for them instead;
+	// AllowBooleanKeys stays on so unrelated bare flags elsewhere in the
+	// file (ones we don't ask about) don't fail the whole parse.
+	prepared := markBareKeysAsEmpty(raw, keys)
+
+	cfg, err := ini.LoadSources(ini.LoadOptions{Loose: true, AllowBooleanKeys: true}, prepared)
 	if err != nil {
 		if s.Logger != nil {
-			s.Logger.Warn("settings: failed to read own-conf file for reload provenance; treating as no keys present",
+			s.Logger.Warn("settings: failed to parse own-conf file for reload provenance; treating as no keys present",
 				"path", s.Path, "error", err)
 		}
 		return result
@@ -96,4 +120,33 @@ func (s IniOwnConfSource) OwnConfKeys() map[string]string {
 		}
 	}
 	return result
+}
+
+// markBareKeysAsEmpty rewrites any line of raw that is exactly one of keys
+// (after trimming whitespace, and not a comment) into "key=" — an explicit,
+// empty-valued key — so ini.v1 parses it as present-with-"" rather than
+// invoking its own AllowBooleanKeys convention (which stores the literal
+// string "true" for a bare key). This is what makes IniOwnConfSource match
+// the C++ isolation parser's "" for a bare flag-style entry, without having
+// to abandon ini.v1 for the rest of the file's parsing.
+func markBareKeysAsEmpty(raw []byte, keys []string) []byte {
+	keySet := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		keySet[k] = true
+	}
+
+	lines := strings.Split(string(raw), "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		if strings.Contains(trimmed, "=") {
+			continue
+		}
+		if keySet[trimmed] {
+			lines[i] = trimmed + "="
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
 }
