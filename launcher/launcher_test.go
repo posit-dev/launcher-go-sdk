@@ -11,6 +11,7 @@ import (
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
+	"github.com/posit-dev/launcher-go-sdk/internal/reloaddispatch"
 	"github.com/posit-dev/launcher-go-sdk/settings"
 )
 
@@ -400,16 +401,16 @@ func TestConfigReload_SettingsReloadablePlugin_NilReloader(t *testing.T) {
 	}
 }
 
-// TestHandleConfigReload_MatchesWireDispatch pins that the exported
-// [HandleConfigReload] (added for the conformance package - see
-// conformance.RunReload) makes exactly the same dispatch decision as a real
-// ConfigReloadRequest over the wire, for the one case that is cheapest to
-// get subtly wrong in a refactor: a plugin implementing neither reload
-// interface. If handleConfigReload's extraction from createHandler's
-// switch case ever drifts from the actual wire path, this and
-// TestConfigReload_NotImplemented would disagree.
+// TestHandleConfigReload_MatchesWireDispatch pins that
+// [reloaddispatch.Handle] (the internal dispatch logic shared by
+// createHandler and the conformance package - see conformance.RunReload)
+// makes exactly the same dispatch decision as a real ConfigReloadRequest
+// over the wire, for the one case that is cheapest to get subtly wrong in
+// a refactor: a plugin implementing neither reload interface. If
+// reloaddispatch.Handle's logic ever drifts from the actual wire path,
+// this and TestConfigReload_NotImplemented would disagree.
 func TestHandleConfigReload_MatchesWireDispatch(t *testing.T) {
-	errType, errMsg, applied, pendingRestart, generation := HandleConfigReload(context.Background(), &stubPlugin{}, nil, 42)
+	errType, errMsg, applied, pendingRestart, generation := reloaddispatch.Handle(context.Background(), &stubPlugin{}, nil, 42)
 
 	if errType != api.ReloadErrorRequestNotSupported {
 		t.Errorf("errorType = %d, want %d (RequestNotSupported)", errType, api.ReloadErrorRequestNotSupported)
@@ -429,7 +430,7 @@ func TestHandleConfigReload_MatchesWireDispatch(t *testing.T) {
 }
 
 // TestHandleConfigReload_SettingsReloadablePlugin exercises the
-// SettingsReloadablePlugin path directly through [HandleConfigReload],
+// SettingsReloadablePlugin path directly through [reloaddispatch.Handle],
 // verifying it reaches the plugin's real *settings.Reloader the same way
 // the wire dispatch does.
 func TestHandleConfigReload_SettingsReloadablePlugin(t *testing.T) {
@@ -440,7 +441,7 @@ func TestHandleConfigReload_SettingsReloadablePlugin(t *testing.T) {
 	pushed := inherited
 	pushed.JobExpiryHours = 48
 
-	errType, errMsg, applied, _, generation := HandleConfigReload(context.Background(), p, &pushed, 9)
+	errType, errMsg, applied, _, generation := reloaddispatch.Handle(context.Background(), p, &pushed, 9)
 
 	if errType != api.ReloadErrorNone {
 		t.Errorf("errorType = %d, want 0 (None), errorMessage = %q", errType, errMsg)

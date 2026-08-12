@@ -69,22 +69,6 @@ type fixtureExpected struct {
 	Provenance string `json:"provenance"`
 }
 
-// knownDivergentCaseKeys lists (case name, key) pairs where this runner has
-// confirmed a genuine cross-implementation disagreement rather than a runner
-// bug - see testdata/PROVENANCE.md's "Known cross-implementation
-// disagreement" section and this repo's .superpowers/sdd/task19b-report.md.
-// Per the fixture format doc, such a disagreement must be reported, not
-// silently resolved by editing either side; entries here exist only to keep
-// `just ci` green while that report is pending a routing decision. Do not
-// add an entry here to make a newly-failing case pass without first
-// confirming (as task19b did, empirically) that the disagreement is real and
-// reporting it - this map is a documented, visible exception list, not a
-// generic escape hatch.
-var knownDivergentCaseKeys = map[string]string{
-	"job-expiry-hours-lossless-1234.567":        "job-expiry-hours",
-	"job-expiry-hours-lossless-0.1-adversarial": "job-expiry-hours",
-}
-
 // TestFixtureConformance runs every case in
 // testdata/settings-resolver-conformance.json through the real [Resolve]
 // production path, asserting both the resolved value and provenance for
@@ -131,10 +115,6 @@ func TestFixtureConformance(t *testing.T) {
 				}
 
 				t.Run(key, func(t *testing.T) {
-					if divergentKey, known := knownDivergentCaseKeys[tc.Name]; known && divergentKey == key {
-						t.Skipf("KNOWN cross-implementation disagreement (not a fixture defect) - see testdata/PROVENANCE.md and .superpowers/sdd/task19b-report.md")
-					}
-
 					got, ok := resolved[key]
 					if !ok {
 						t.Fatalf("Resolve() did not return a value for key %q", key)

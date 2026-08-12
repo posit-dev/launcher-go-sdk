@@ -7,19 +7,56 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/api"
 )
 
-func TestFormatJobExpiryHoursLossless_RoundTrips(t *testing.T) {
-	// The brief requires proving round-trip losslessness for these two
-	// specific values (a fractional value and a value requiring more than
-	// one significant digit past the decimal point).
-	for _, v := range []float64{1234.567, 0.5} {
+// TestFormatJobExpiryHoursLossless_ExactVectors pins the three canonical
+// cross-language vectors from
+// testdata/settings-resolver-conformance.json's job-expiry-hours-lossless-*
+// cases directly against FormatJobExpiryHoursLossless, so a regression here
+// is caught even independent of resolve_conformance_test.go's full-fixture
+// run. 1234.567 and 0.1 exercise float32 rounding noise (see the function's
+// doc comment); 0.5 is exactly representable in binary and agrees with or
+// without narrowing.
+func TestFormatJobExpiryHoursLossless_ExactVectors(t *testing.T) {
+	tests := []struct {
+		hours float64
+		want  string
+	}{
+		{1234.567, "1234.56702"},
+		{0.5, "0.5"},
+		{0.1, "0.100000001"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			got := FormatJobExpiryHoursLossless(tc.hours)
+			if got != tc.want {
+				t.Errorf("FormatJobExpiryHoursLossless(%v) = %q, want %q", tc.hours, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFormatJobExpiryHoursLossless_RoundTripsAtFloat32Precision verifies
+// round-trip losslessness relative to the float32-narrowed value, not the
+// original float64 input: FormatJobExpiryHoursLossless deliberately narrows
+// to float32 first (matching the C++ Launcher's own float precision for
+// this field - see the function's doc comment), so the raw string it
+// produces can only round-trip to that narrowed value.
+func TestFormatJobExpiryHoursLossless_RoundTripsAtFloat32Precision(t *testing.T) {
+	for _, v := range []float64{1234.567, 0.5, 0.1} {
 		t.Run(strconv.FormatFloat(v, 'g', -1, 64), func(t *testing.T) {
 			raw := FormatJobExpiryHoursLossless(v)
-			parsed, err := strconv.ParseFloat(raw, 64)
+			// Parse as float32, not float64: the 9-significant-digit
+			// (max_digits10) formatting this function uses is calibrated to
+			// round-trip losslessly through a float32 parse, not a float64
+			// one - parsing "0.100000001" back as float64 does not exactly
+			// equal float64(float32(0.1))'s full ~17-digit expansion, but
+			// parsing it as float32 does.
+			parsed, err := strconv.ParseFloat(raw, 32)
 			if err != nil {
 				t.Fatalf("ParseFloat(%q) error = %v", raw, err)
 			}
-			if parsed != v {
-				t.Errorf("round-trip: FormatJobExpiryHoursLossless(%v) = %q, ParseFloat back = %v, want %v", v, raw, parsed, v)
+			want := float32(v)
+			if float32(parsed) != want {
+				t.Errorf("round-trip: FormatJobExpiryHoursLossless(%v) = %q, ParseFloat(_, 32) back = %v, want %v (the float32-narrowed value)", v, raw, float32(parsed), want)
 			}
 		})
 	}

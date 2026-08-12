@@ -18,6 +18,7 @@ import (
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
+	"github.com/posit-dev/launcher-go-sdk/internal/reloaddispatch"
 	"github.com/posit-dev/launcher-go-sdk/settings"
 )
 
@@ -310,94 +311,15 @@ type MetricsPlugin interface {
 // [ConfigReloadablePlugin.ReloadConfig] to provide both an error type and
 // message. If a plain error is returned, the error type defaults to
 // [api.ReloadErrorUnknown].
-type ConfigReloadError struct {
-	Type    api.ConfigReloadErrorType
-	Message string
-}
-
-func (e *ConfigReloadError) Error() string {
-	if e.Message != "" {
-		return e.Message
-	}
-	return fmt.Sprintf("config reload failed: %s", e.Type)
-}
-
-// handleConfigReload implements the config-reload dispatch decision
-// documented on [SettingsReloadablePlugin] and [ConfigReloadablePlugin]:
-// SettingsReloadablePlugin takes precedence when implemented; a plugin that
-// implements neither is reported as [api.ReloadErrorRequestNotSupported].
-// generation is echoed back verbatim as echoedGeneration so the one call
-// site in createHandler and [HandleConfigReload] (its exported test/
-// conformance-only wrapper) cannot drift apart on that guarantee.
-func handleConfigReload(ctx context.Context, p Plugin, inherited *api.InheritedSettings, generation uint) (errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, echoedGeneration uint) {
-	echoedGeneration = generation
-
-	if srPlugin, ok := p.(SettingsReloadablePlugin); ok {
-		reloader := srPlugin.SettingsReloader()
-		if reloader == nil {
-			// The plugin claims to support settings reload by implementing
-			// SettingsReloadablePlugin, but supplied no Reloader - a
-			// plugin-author bug (e.g. forgot to construct one, or an
-			// initialization-order mistake), not something the Launcher
-			// asked for. Report it as an unclassified reload failure rather
-			// than ReloadErrorRequestNotSupported: RequestNotSupported would
-			// misrepresent this as "this plugin type doesn't do settings
-			// reload", when the plugin itself claims otherwise. Above all,
-			// never panic the whole plugin process on every reload request.
-			errorType = api.ReloadErrorUnknown
-			errorMessage = "plugin implements SettingsReloadablePlugin but SettingsReloader() returned nil"
-			return
-		}
-		report, err := reloader.Reload(ctx, inherited, generation)
-		if err != nil {
-			var verr *settings.ValidationError
-			errorType = api.ReloadErrorUnknown
-			if errors.As(err, &verr) {
-				errorType = api.ReloadErrorValidate
-			}
-			errorMessage = err.Error()
-			return
-		}
-		applied = report.Applied
-		pendingRestart = report.PendingRestart
-		return
-	}
-
-	crPlugin, ok := p.(ConfigReloadablePlugin)
-	if !ok {
-		errorType = api.ReloadErrorRequestNotSupported
-		errorMessage = "this plugin does not support configuration reload"
-		return
-	}
-	if err := crPlugin.ReloadConfig(ctx); err != nil {
-		var crErr *ConfigReloadError
-		if errors.As(err, &crErr) {
-			errorType = crErr.Type
-			errorMessage = crErr.Message
-		} else {
-			errorType = api.ReloadErrorUnknown
-			errorMessage = err.Error()
-		}
-		return
-	}
-	return
-}
-
-// HandleConfigReload drives one config reload through the exact same
-// dispatch logic [Runtime] uses when it receives a ConfigReloadRequest over
-// IPC (interface detection between [SettingsReloadablePlugin] and
-// [ConfigReloadablePlugin], the nil-Reloader guard, [settings.Reloader]
-// invocation, and error classification), without requiring a live
-// stdin/stdout connection.
 //
-// This exists so the conformance package (see conformance.RunReload) can
-// exercise a plugin's real reload behavior end to end. Most plugin authors
-// will never need to call this directly - it is exported for conformance
-// testing only, not as a substitute for running the plugin under a real
-// Launcher.
-func HandleConfigReload(ctx context.Context, p Plugin, inherited *api.InheritedSettings, generation uint) (errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, echoedGeneration uint) {
-	return handleConfigReload(ctx, p, inherited, generation)
-}
+// This is a type alias to [reloaddispatch.ConfigReloadError]: the real
+// definition lives in that internal package (shared by this package's own
+// dispatch and by the conformance package's reload conformance area, see
+// conformance.RunReload) so it can be referenced from both sides of that
+// shared logic without an import cycle. The alias keeps the identifier
+// plugin authors use, `launcher.ConfigReloadError`, unchanged - this is
+// purely an internal reorganization, not an API change.
+type ConfigReloadError = reloaddispatch.ConfigReloadError
 
 // ResponseWriter is the interface for writing responses back to the Launcher.
 // Methods return error to allow implementations flexibility in error reporting
@@ -645,7 +567,7 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 			w.WriteSetLoadBalancerNodes()
 		case *protocol.ConfigReloadRequest:
 			w = newResponseWriter(req, ch)
-			errType, errMsg, applied, pendingRestart, generation := handleConfigReload(ctx, p, r.InheritedSettings, r.Generation)
+			errType, errMsg, applied, pendingRestart, generation := reloaddispatch.Handle(ctx, p, r.InheritedSettings, r.Generation)
 			//nolint:errcheck // sendResponse currently always returns nil
 			w.WriteConfigReload(errType, errMsg, applied, pendingRestart, generation)
 		default:

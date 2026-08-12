@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
+	"github.com/posit-dev/launcher-go-sdk/internal/reloaddispatch"
 	"github.com/posit-dev/launcher-go-sdk/launcher"
 	"github.com/posit-dev/launcher-go-sdk/settings"
 )
@@ -95,8 +96,9 @@ type ReloadOpts struct {
 // push without partially applying it, and does not let an absent
 // InheritedSettings push clobber previously-cached values.
 //
-// Every check drives the plugin through [launcher.HandleConfigReload], the
-// same dispatch logic a real Launcher's ConfigReloadRequest triggers, so
+// Every check drives the plugin through the same internal dispatch logic
+// (internal/reloaddispatch) a real Launcher's ConfigReloadRequest triggers
+// via [launcher.Runtime], so
 // this exercises the plugin's actual reload behavior end to end rather than
 // re-testing package settings' own internals (see that package's tests for
 // Reloader-level coverage). RunReload does not verify runtime application
@@ -123,7 +125,7 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 				t.Skip("plugin implements a reload interface; this check only applies to a plugin implementing neither")
 			}
 
-			errType, errMsg, applied, pendingRestart, generation := launcher.HandleConfigReload(context.Background(), p, nil, 42)
+			errType, errMsg, applied, pendingRestart, generation := reloaddispatch.Handle(context.Background(), p, nil, 42)
 
 			if errType != api.ReloadErrorRequestNotSupported {
 				t.Errorf("errorType = %v, want RequestNotSupported - a plugin implementing neither ConfigReloadablePlugin nor SettingsReloadablePlugin must never report a reload as successful", errType)
@@ -168,7 +170,7 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 			pushed.EnableDebugLogging = !opts.StartupInherited.EnableDebugLogging
 			pushed.JobExpiryHours = beforeHours + 1
 
-			errType, errMsg, applied, pendingRestart, generation := launcher.HandleConfigReload(context.Background(), p, &pushed, 7)
+			errType, errMsg, applied, pendingRestart, generation := reloaddispatch.Handle(context.Background(), p, &pushed, 7)
 			if errType != api.ReloadErrorNone {
 				t.Fatalf("errorType = %v (%s), want None - construct ReloadOpts.StartupInherited from values the Reloader accepts", errType, errMsg)
 			}
@@ -205,7 +207,7 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 			invalid := opts.StartupInherited
 			invalid.JobExpiryHours = -1
 
-			errType, errMsg, applied, pendingRestart, _ := launcher.HandleConfigReload(context.Background(), p, &invalid, 1)
+			errType, errMsg, applied, pendingRestart, _ := reloaddispatch.Handle(context.Background(), p, &invalid, 1)
 			if errType != api.ReloadErrorValidate {
 				t.Fatalf("errorType = %v (%s), want Validate for a negative job-expiry-hours", errType, errMsg)
 			}
@@ -230,7 +232,7 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 			pushed := opts.StartupInherited
 			pushed.ServerUser += "-conformance-cached-user"
 
-			errType, errMsg, _, pendingRestart1, _ := launcher.HandleConfigReload(context.Background(), p, &pushed, 1)
+			errType, errMsg, _, pendingRestart1, _ := reloaddispatch.Handle(context.Background(), p, &pushed, 1)
 			if errType != api.ReloadErrorNone {
 				t.Fatalf("setup reload errorType = %v (%s), want None", errType, errMsg)
 			}
@@ -244,7 +246,7 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 			// the cached server-user with a zero-valued struct - doing so
 			// would make it disagree with the startup baseline again and
 			// silently drop server-user from pendingRestart.
-			_, _, _, pendingRestart2, _ := launcher.HandleConfigReload(context.Background(), p, nil, 2)
+			_, _, _, pendingRestart2, _ := reloaddispatch.Handle(context.Background(), p, nil, 2)
 			if !containsKey(pendingRestart2, "server-user") {
 				t.Errorf("reload with nil InheritedSettings: pendingRestart = %v, want to still contain server-user - an absent push must not reset the cached value", pendingRestart2)
 			}

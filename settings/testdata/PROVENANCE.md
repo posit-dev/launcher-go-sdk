@@ -21,12 +21,15 @@
   loudly (not skips) on a missing file, a parse error, an unrecognized format version, or a
   zero-length case list.
 
-## Known cross-implementation disagreement (open, not a copy defect)
+## Resolved cross-implementation disagreement (fixed in the Fix Round 1 pass)
 
-As of the above commit, `../resolve_conformance_test.go` reports two failing vectors:
-`job-expiry-hours-lossless-1234.567` and `job-expiry-hours-lossless-0.1-adversarial`. This is a
-real behavioral difference between the Go SDK's `FormatJobExpiryHoursLossless`
-(`../inherited.go`) and the C++ `formatJobExpiryHoursLossless()` it is documented to mirror — see
-task19b-report.md in this repo's `.superpowers/sdd/` for the full analysis. It is **not** a fixture
-or copy problem, and per that report it has deliberately not been fixed on either side pending a
-routing decision. Do not "fix" it by editing this fixture.
+Task 19b originally found that two vectors — `job-expiry-hours-lossless-1234.567` and
+`job-expiry-hours-lossless-0.1-adversarial` — failed against the Go SDK's
+`FormatJobExpiryHoursLossless` (`../inherited.go`), because it formatted the full float64 value
+instead of narrowing to float32 first like the C++ `formatJobExpiryHoursLossless()` it mirrors.
+That was reported rather than silently fixed, per the task's "stop and report" instruction. The
+controller ruled: narrow to float32 in the Go function (see its doc comment in `../inherited.go`
+for the full rationale — a plugin's inherited job-expiry value always originates from the
+Launcher's 32-bit float, so float32 is the most precision either side can ever express). Both
+vectors now pass for real; see `.superpowers/sdd/task19b-report.md`'s Fix Round 1 section for the
+before/after evidence. There is no longer a known disagreement in this fixture.
