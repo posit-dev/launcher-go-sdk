@@ -1,0 +1,526 @@
+{
+  "cases": [
+    {
+      "description": "Own-conf sets nothing; every key falls back to InheritedSettings' own compiled defaults.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "24"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 24.0,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "all-keys-inherited-zero-values",
+      "ownConf": {}
+    },
+    {
+      "description": "Own-conf sets nothing; every key falls back to a launcher cascade that overrode every default.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "1"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "15"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "36"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": "/var/log/rstudio/launcher"
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "90"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": "/var/lib/rstudio-launcher/local"
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": "rstudio-server"
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": true,
+        "heartbeatIntervalSeconds": 15,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 36.0,
+        "loggingDir": "/var/log/rstudio/launcher",
+        "pluginMetricsIntervalSeconds": 90,
+        "scratchPath": "/var/lib/rstudio-launcher/local",
+        "serverUser": "rstudio-server"
+      },
+      "name": "all-keys-inherited-custom-values",
+      "ownConf": {}
+    },
+    {
+      "description": "Own-conf sets every key, to values that differ from a fully-populated inherited layer; own-conf must win across the board.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "own-conf",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "own-conf",
+          "value": "30"
+        },
+        "job-expiry-hours": {
+          "provenance": "own-conf",
+          "value": "12"
+        },
+        "logging-dir": {
+          "provenance": "own-conf",
+          "value": "/opt/plugin/logs"
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "own-conf",
+          "value": "45"
+        },
+        "scratch-path": {
+          "provenance": "own-conf",
+          "value": "/opt/plugin/scratch"
+        },
+        "server-user": {
+          "provenance": "own-conf",
+          "value": "pluginuser"
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": true,
+        "heartbeatIntervalSeconds": 15,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 36.0,
+        "loggingDir": "/var/log/rstudio/launcher",
+        "pluginMetricsIntervalSeconds": 90,
+        "scratchPath": "/var/lib/rstudio-launcher/local",
+        "serverUser": "rstudio-server"
+      },
+      "name": "all-keys-own-conf",
+      "ownConf": {
+        "enable-debug-logging": "0",
+        "heartbeat-interval-seconds": "30",
+        "job-expiry-hours": "12",
+        "logging-dir": "/opt/plugin/logs",
+        "plugin-metrics-interval-seconds": "45",
+        "scratch-path": "/opt/plugin/scratch",
+        "server-user": "pluginuser"
+      }
+    },
+    {
+      "description": "Own-conf sets a subset of keys (job-expiry-hours, logging-dir); the rest fall back to the inherited layer.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "1"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "15"
+        },
+        "job-expiry-hours": {
+          "provenance": "own-conf",
+          "value": "72"
+        },
+        "logging-dir": {
+          "provenance": "own-conf",
+          "value": "/custom/log/dir"
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "90"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": "/var/lib/rstudio-launcher/local"
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": "rstudio-server"
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": true,
+        "heartbeatIntervalSeconds": 15,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 36.0,
+        "loggingDir": "/var/log/rstudio/launcher",
+        "pluginMetricsIntervalSeconds": 90,
+        "scratchPath": "/var/lib/rstudio-launcher/local",
+        "serverUser": "rstudio-server"
+      },
+      "name": "mixed-layers",
+      "ownConf": {
+        "job-expiry-hours": "72",
+        "logging-dir": "/custom/log/dir"
+      }
+    },
+    {
+      "description": "THE load-bearing case. Own-conf explicitly sets job-expiry-hours to a value identical to what the inherited layer would have supplied. Provenance must still be own-conf: this is the exact bug (comparing values instead of checking presence) that the design fixes.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "own-conf",
+          "value": "24"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 24.0,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "derivation-job-expiry-hours-equals-inherited-default",
+      "ownConf": {
+        "job-expiry-hours": "24"
+      }
+    },
+    {
+      "description": "Same derivation bug, on a boolean-typed key: own-conf explicitly sets enable-debug-logging to '0', identical to the inherited default (false). Provenance must still be own-conf.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "own-conf",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "24"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 24.0,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "derivation-enable-debug-logging-equals-inherited-default",
+      "ownConf": {
+        "enable-debug-logging": "0"
+      }
+    },
+    {
+      "description": "Own-conf carries enable-debug-logging as a bare flag (present, no value token) - distinct from 'present with value \"0\"'. Both C++ (parseOwnConfKeysInIsolation) and the Go SDK (fixed in commit 5f5a513) must yield presence with an empty raw value.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "own-conf",
+          "value": ""
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "24"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 24.0,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "bare-flag-own-conf-enable-debug-logging",
+      "ownConf": {
+        "enable-debug-logging": ""
+      }
+    },
+    {
+      "description": "Lossless round-trip vector 1 of 3 (verified in C++ InheritedSettingsTests.cpp): a value that numberToString<float>()'s default 6-significant-digit formatting would have rounded to '1234.57', losing precision. max_digits10 (9) formatting must instead produce '1234.56702'.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "1234.56702"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 1234.567,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "job-expiry-hours-lossless-1234.567",
+      "ownConf": {}
+    },
+    {
+      "description": "Lossless round-trip vector 2 of 3 (verified in C++ InheritedSettingsTests.cpp): an exactly-representable-in-binary fraction, to confirm the formatter does not pad spurious trailing digits.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "0.5"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 0.5,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "job-expiry-hours-lossless-0.5",
+      "ownConf": {}
+    },
+    {
+      "description": "Lossless round-trip vector 3 of 3 (new, adversarial): 0.1 is not exactly representable in binary floating point, so its nearest float32 carries 9 significant digits of noise ('0.100000001'). This is the sharpest test of max_digits10 formatting: any rounding-mode or precision slip in either implementation changes this string.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "0.100000001"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": "60"
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": true,
+        "jobExpiryHours": 0.1,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 60,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "job-expiry-hours-lossless-0.1-adversarial",
+      "ownConf": {}
+    },
+    {
+      "description": "Edge case: when includePluginMetricsIntervalSeconds is false (a third-party plugin type), the inherited layer's wire form (InheritedSettings::toArgs()) omits plugin-metrics-interval-seconds entirely. Own-conf doesn't set it either, so it is still dual-homed/Inherited by provenance, but there is no inherited raw value to source - the resolved value is empty, NOT the numeric pluginMetricsIntervalSeconds field (999) that toJson()/toArgs() would otherwise have carried. This pins that resolve() reads the wire form, not the struct field, for its raw value.",
+      "expected": {
+        "enable-debug-logging": {
+          "provenance": "inherited",
+          "value": "0"
+        },
+        "heartbeat-interval-seconds": {
+          "provenance": "inherited",
+          "value": "5"
+        },
+        "job-expiry-hours": {
+          "provenance": "inherited",
+          "value": "24"
+        },
+        "logging-dir": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "plugin-metrics-interval-seconds": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "scratch-path": {
+          "provenance": "inherited",
+          "value": ""
+        },
+        "server-user": {
+          "provenance": "inherited",
+          "value": ""
+        }
+      },
+      "inherited": {
+        "enableDebugLogging": false,
+        "heartbeatIntervalSeconds": 5,
+        "includePluginMetricsIntervalSeconds": false,
+        "jobExpiryHours": 24.0,
+        "loggingDir": "",
+        "pluginMetricsIntervalSeconds": 999,
+        "scratchPath": "",
+        "serverUser": ""
+      },
+      "name": "plugin-metrics-interval-excluded-for-third-party-cluster",
+      "ownConf": {}
+    }
+  ],
+  "dualHomedKeys": [
+    "server-user",
+    "enable-debug-logging",
+    "scratch-path",
+    "logging-dir",
+    "heartbeat-interval-seconds",
+    "job-expiry-hours",
+    "plugin-metrics-interval-seconds"
+  ],
+  "formatVersion": 1
+}

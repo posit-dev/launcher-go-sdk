@@ -322,6 +322,83 @@ func (e *ConfigReloadError) Error() string {
 	return fmt.Sprintf("config reload failed: %s", e.Type)
 }
 
+// handleConfigReload implements the config-reload dispatch decision
+// documented on [SettingsReloadablePlugin] and [ConfigReloadablePlugin]:
+// SettingsReloadablePlugin takes precedence when implemented; a plugin that
+// implements neither is reported as [api.ReloadErrorRequestNotSupported].
+// generation is echoed back verbatim as echoedGeneration so the one call
+// site in createHandler and [HandleConfigReload] (its exported test/
+// conformance-only wrapper) cannot drift apart on that guarantee.
+func handleConfigReload(ctx context.Context, p Plugin, inherited *api.InheritedSettings, generation uint) (errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, echoedGeneration uint) {
+	echoedGeneration = generation
+
+	if srPlugin, ok := p.(SettingsReloadablePlugin); ok {
+		reloader := srPlugin.SettingsReloader()
+		if reloader == nil {
+			// The plugin claims to support settings reload by implementing
+			// SettingsReloadablePlugin, but supplied no Reloader - a
+			// plugin-author bug (e.g. forgot to construct one, or an
+			// initialization-order mistake), not something the Launcher
+			// asked for. Report it as an unclassified reload failure rather
+			// than ReloadErrorRequestNotSupported: RequestNotSupported would
+			// misrepresent this as "this plugin type doesn't do settings
+			// reload", when the plugin itself claims otherwise. Above all,
+			// never panic the whole plugin process on every reload request.
+			errorType = api.ReloadErrorUnknown
+			errorMessage = "plugin implements SettingsReloadablePlugin but SettingsReloader() returned nil"
+			return
+		}
+		report, err := reloader.Reload(ctx, inherited, generation)
+		if err != nil {
+			var verr *settings.ValidationError
+			errorType = api.ReloadErrorUnknown
+			if errors.As(err, &verr) {
+				errorType = api.ReloadErrorValidate
+			}
+			errorMessage = err.Error()
+			return
+		}
+		applied = report.Applied
+		pendingRestart = report.PendingRestart
+		return
+	}
+
+	crPlugin, ok := p.(ConfigReloadablePlugin)
+	if !ok {
+		errorType = api.ReloadErrorRequestNotSupported
+		errorMessage = "this plugin does not support configuration reload"
+		return
+	}
+	if err := crPlugin.ReloadConfig(ctx); err != nil {
+		var crErr *ConfigReloadError
+		if errors.As(err, &crErr) {
+			errorType = crErr.Type
+			errorMessage = crErr.Message
+		} else {
+			errorType = api.ReloadErrorUnknown
+			errorMessage = err.Error()
+		}
+		return
+	}
+	return
+}
+
+// HandleConfigReload drives one config reload through the exact same
+// dispatch logic [Runtime] uses when it receives a ConfigReloadRequest over
+// IPC (interface detection between [SettingsReloadablePlugin] and
+// [ConfigReloadablePlugin], the nil-Reloader guard, [settings.Reloader]
+// invocation, and error classification), without requiring a live
+// stdin/stdout connection.
+//
+// This exists so the conformance package (see conformance.RunReload) can
+// exercise a plugin's real reload behavior end to end. Most plugin authors
+// will never need to call this directly - it is exported for conformance
+// testing only, not as a substitute for running the plugin under a real
+// Launcher.
+func HandleConfigReload(ctx context.Context, p Plugin, inherited *api.InheritedSettings, generation uint) (errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, echoedGeneration uint) {
+	return handleConfigReload(ctx, p, inherited, generation)
+}
+
 // ResponseWriter is the interface for writing responses back to the Launcher.
 // Methods return error to allow implementations flexibility in error reporting
 // (e.g., mock writers can simulate failures). Most plugin code treats writes as
@@ -568,61 +645,9 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 			w.WriteSetLoadBalancerNodes()
 		case *protocol.ConfigReloadRequest:
 			w = newResponseWriter(req, ch)
-			if srPlugin, ok := p.(SettingsReloadablePlugin); ok {
-				reloader := srPlugin.SettingsReloader()
-				if reloader == nil {
-					// The plugin claims to support settings reload by
-					// implementing SettingsReloadablePlugin, but supplied no
-					// Reloader - a plugin-author bug (e.g. forgot to
-					// construct one, or an initialization-order mistake),
-					// not something the Launcher asked for. Report it as an
-					// unclassified reload failure rather than
-					// ReloadErrorRequestNotSupported: RequestNotSupported
-					// would misrepresent this as "this plugin type doesn't
-					// do settings reload", when the plugin itself claims
-					// otherwise. Above all, never panic the whole plugin
-					// process on every reload request.
-					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(api.ReloadErrorUnknown,
-						"plugin implements SettingsReloadablePlugin but SettingsReloader() returned nil",
-						nil, nil, r.Generation)
-					return
-				}
-				report, err := reloader.Reload(ctx, r.InheritedSettings, r.Generation)
-				if err != nil {
-					var verr *settings.ValidationError
-					errType := api.ReloadErrorUnknown
-					if errors.As(err, &verr) {
-						errType = api.ReloadErrorValidate
-					}
-					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(errType, err.Error(), nil, nil, r.Generation)
-					return
-				}
-				//nolint:errcheck // sendResponse currently always returns nil
-				w.WriteConfigReload(api.ReloadErrorNone, "", report.Applied, report.PendingRestart, r.Generation)
-				return
-			}
-			crPlugin, ok := p.(ConfigReloadablePlugin)
-			if !ok {
-				//nolint:errcheck // sendResponse currently always returns nil
-				w.WriteConfigReload(api.ReloadErrorRequestNotSupported,
-					"this plugin does not support configuration reload", nil, nil, r.Generation)
-				return
-			}
-			if err := crPlugin.ReloadConfig(ctx); err != nil {
-				var crErr *ConfigReloadError
-				if errors.As(err, &crErr) {
-					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(crErr.Type, crErr.Message, nil, nil, r.Generation)
-				} else {
-					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(api.ReloadErrorUnknown, err.Error(), nil, nil, r.Generation)
-				}
-				return
-			}
+			errType, errMsg, applied, pendingRestart, generation := handleConfigReload(ctx, p, r.InheritedSettings, r.Generation)
 			//nolint:errcheck // sendResponse currently always returns nil
-			w.WriteConfigReload(api.ReloadErrorNone, "", nil, nil, r.Generation)
+			w.WriteConfigReload(errType, errMsg, applied, pendingRestart, generation)
 		default:
 			w = newResponseWriter(req, ch)
 			//nolint:errcheck // sendResponse currently always returns nil

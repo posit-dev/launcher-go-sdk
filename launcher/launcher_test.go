@@ -400,6 +400,59 @@ func TestConfigReload_SettingsReloadablePlugin_NilReloader(t *testing.T) {
 	}
 }
 
+// TestHandleConfigReload_MatchesWireDispatch pins that the exported
+// [HandleConfigReload] (added for the conformance package - see
+// conformance.RunReload) makes exactly the same dispatch decision as a real
+// ConfigReloadRequest over the wire, for the one case that is cheapest to
+// get subtly wrong in a refactor: a plugin implementing neither reload
+// interface. If handleConfigReload's extraction from createHandler's
+// switch case ever drifts from the actual wire path, this and
+// TestConfigReload_NotImplemented would disagree.
+func TestHandleConfigReload_MatchesWireDispatch(t *testing.T) {
+	errType, errMsg, applied, pendingRestart, generation := HandleConfigReload(context.Background(), &stubPlugin{}, nil, 42)
+
+	if errType != api.ReloadErrorRequestNotSupported {
+		t.Errorf("errorType = %d, want %d (RequestNotSupported)", errType, api.ReloadErrorRequestNotSupported)
+	}
+	if errMsg == "" {
+		t.Error("errorMessage is empty, want a non-empty explanation")
+	}
+	if applied != nil {
+		t.Errorf("applied = %v, want nil", applied)
+	}
+	if pendingRestart != nil {
+		t.Errorf("pendingRestart = %v, want nil", pendingRestart)
+	}
+	if generation != 42 {
+		t.Errorf("echoedGeneration = %d, want 42 (echoed back verbatim)", generation)
+	}
+}
+
+// TestHandleConfigReload_SettingsReloadablePlugin exercises the
+// SettingsReloadablePlugin path directly through [HandleConfigReload],
+// verifying it reaches the plugin's real *settings.Reloader the same way
+// the wire dispatch does.
+func TestHandleConfigReload_SettingsReloadablePlugin(t *testing.T) {
+	inherited := testInheritedSettings()
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &settingsReloadablePlugin{reloader: reloader}
+
+	pushed := inherited
+	pushed.JobExpiryHours = 48
+
+	errType, errMsg, applied, _, generation := HandleConfigReload(context.Background(), p, &pushed, 9)
+
+	if errType != api.ReloadErrorNone {
+		t.Errorf("errorType = %d, want 0 (None), errorMessage = %q", errType, errMsg)
+	}
+	if !containsStr(applied, "job-expiry-hours") {
+		t.Errorf("applied = %v, want to contain job-expiry-hours", applied)
+	}
+	if generation != 9 {
+		t.Errorf("echoedGeneration = %d, want 9", generation)
+	}
+}
+
 func containsStr(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {
