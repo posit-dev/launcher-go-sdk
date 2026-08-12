@@ -79,7 +79,7 @@ type DefaultOptions struct {
 	// to the Launcher. When zero, metrics collection is disabled.
 	MetricsInterval time.Duration
 
-	jobExpiryHours         uint
+	jobExpiryHours         float64
 	heartbeatSeconds       uint
 	metricsIntervalSeconds uint
 	threadPoolSize         uint64
@@ -103,7 +103,7 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 			o.Debug = b
 			return nil
 		})
-	f.UintVar(&o.jobExpiryHours, "job-expiry-hours", uint(24),
+	f.Float64Var(&o.jobExpiryHours, "job-expiry-hours", 24,
 		"amount of hours before completed jobs are removed from the system")
 	// Set by Launcher but not used by any (known) plugin. If the upstream
 	// Launcher service became unresponsive and stopped sending heartbeats,
@@ -135,7 +135,7 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 
 // Validate implements Options.
 func (o *DefaultOptions) Validate() error {
-	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)                 //nolint:gosec // CLI flag values are small integers
+	o.JobExpiry = time.Duration(float64(time.Hour) * o.jobExpiryHours)
 	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds)     //nolint:gosec // CLI flag values are small integers
 	o.MetricsInterval = time.Second * time.Duration(o.metricsIntervalSeconds) //nolint:gosec // CLI flag values are small integers
 	return nil
