@@ -421,19 +421,31 @@ func TestNewConfigReloadResponse_EmptyAppliedAndPendingRestart(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	// Empty (non-nil) slices are omitted by omitempty just like nil ones;
-	// either way the field must not be present with garbage content.
-	if v, ok := got["applied"]; ok {
-		t.Errorf("applied = %v, want omitted for empty slice", v)
+	// The C++ Launcher's ConfigReloadResponse::toJson() always emits
+	// "applied"/"pendingRestart" as arrays, even when empty, rather than
+	// omitting the key - "nothing applied" must round-trip distinctly from
+	// "this plugin doesn't report applied/pendingRestart at all". Match
+	// that: present, empty array, never omitted and never null.
+	appliedVal, ok := got["applied"].([]interface{})
+	if !ok {
+		t.Fatalf("applied = %v (%T), want present empty array", got["applied"], got["applied"])
 	}
-	if v, ok := got["pendingRestart"]; ok {
-		t.Errorf("pendingRestart = %v, want omitted for empty slice", v)
+	if len(appliedVal) != 0 {
+		t.Errorf("applied = %v, want empty array", appliedVal)
+	}
+	pendingVal, ok := got["pendingRestart"].([]interface{})
+	if !ok {
+		t.Fatalf("pendingRestart = %v (%T), want present empty array", got["pendingRestart"], got["pendingRestart"])
+	}
+	if len(pendingVal) != 0 {
+		t.Errorf("pendingRestart = %v, want empty array", pendingVal)
 	}
 }
 
 func TestNewConfigReloadResponse_NoAppliedOrPendingRestart_Defaults(t *testing.T) {
-	// A response that never sets the new fields (pre-3.10.0-style behavior)
-	// must still parse and round-trip with nil/zero values.
+	// A response that never explicitly sets the new fields still emits them
+	// as present, empty arrays (see TestNewConfigReloadResponse_EmptyAppliedAndPendingRestart),
+	// and round-trips back to empty (non-nil) slices, not nil.
 	resp := NewConfigReloadResponse(1, 2, api.ReloadErrorNone, "")
 
 	data, err := json.Marshal(resp)
@@ -445,11 +457,11 @@ func TestNewConfigReloadResponse_NoAppliedOrPendingRestart_Defaults(t *testing.T
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if got.Applied != nil {
-		t.Errorf("Applied = %v, want nil", got.Applied)
+	if len(got.Applied) != 0 {
+		t.Errorf("Applied = %v, want empty", got.Applied)
 	}
-	if got.PendingRestart != nil {
-		t.Errorf("PendingRestart = %v, want nil", got.PendingRestart)
+	if len(got.PendingRestart) != 0 {
+		t.Errorf("PendingRestart = %v, want empty", got.PendingRestart)
 	}
 	if got.Generation != 0 {
 		t.Errorf("Generation = %d, want 0", got.Generation)

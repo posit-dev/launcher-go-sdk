@@ -11,6 +11,7 @@ import (
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
+	"github.com/posit-dev/launcher-go-sdk/settings"
 )
 
 // TestDefaultOptions_EnableDebugLogging verifies that --enable-debug-logging
@@ -133,19 +134,26 @@ func newConfigReloadRequest(t *testing.T, requestID uint64) protocol.Request {
 
 // configReloadResult unmarshals a config reload response from the channel.
 type configReloadResult struct {
-	MessageType  int    `json:"messageType"`
-	RequestID    uint64 `json:"requestId"`
-	ResponseID   uint64 `json:"responseId"`
-	ErrorType    int    `json:"errorType"`
-	ErrorMessage string `json:"errorMessage"`
+	MessageType    int      `json:"messageType"`
+	RequestID      uint64   `json:"requestId"`
+	ResponseID     uint64   `json:"responseId"`
+	ErrorType      int      `json:"errorType"`
+	ErrorMessage   string   `json:"errorMessage"`
+	Applied        []string `json:"applied"`
+	PendingRestart []string `json:"pendingRestart"`
+	Generation     uint     `json:"generation"`
 }
 
 func runConfigReloadHandler(t *testing.T, p Plugin, requestID uint64) configReloadResult {
 	t.Helper()
+	return runConfigReloadHandlerWithRequest(t, p, newConfigReloadRequest(t, requestID))
+}
+
+func runConfigReloadHandlerWithRequest(t *testing.T, p Plugin, req protocol.Request) configReloadResult {
+	t.Helper()
 	ctx := context.Background()
 	handler := createHandler(ctx, slog.Default(), p, 0, time.Now())
 	ch := make(chan interface{}, 1)
-	req := newConfigReloadRequest(t, requestID)
 	handler(req, ch)
 
 	if len(ch) == 0 {
@@ -165,6 +173,11 @@ func runConfigReloadHandler(t *testing.T, p Plugin, requestID uint64) configRelo
 	return result
 }
 
+// TestConfigReload_NotImplemented pins the F9 fix: a plugin that does not
+// implement ConfigReloadablePlugin must report ReloadErrorRequestNotSupported,
+// not a false success. The previous behavior (silently reporting
+// ReloadErrorNone) told the Launcher a reload happened when nothing did -
+// the same bug the C++ Launcher fixed as "Bug A" in its own Task 2.
 func TestConfigReload_NotImplemented(t *testing.T) {
 	result := runConfigReloadHandler(t, &stubPlugin{}, 42)
 
@@ -174,11 +187,11 @@ func TestConfigReload_NotImplemented(t *testing.T) {
 	if result.RequestID != 42 {
 		t.Errorf("requestId = %d, want 42", result.RequestID)
 	}
-	if result.ErrorType != 0 {
-		t.Errorf("errorType = %d, want 0 (None)", result.ErrorType)
+	if result.ErrorType != int(api.ReloadErrorRequestNotSupported) {
+		t.Errorf("errorType = %d, want %d (RequestNotSupported)", result.ErrorType, api.ReloadErrorRequestNotSupported)
 	}
-	if result.ErrorMessage != "" {
-		t.Errorf("errorMessage = %q, want empty", result.ErrorMessage)
+	if result.ErrorMessage == "" {
+		t.Errorf("errorMessage = %q, want a non-empty explanation", result.ErrorMessage)
 	}
 }
 
@@ -237,4 +250,127 @@ func TestConfigReload_WrappedConfigReloadError(t *testing.T) {
 	if result.ErrorMessage != "config file syntax error" {
 		t.Errorf("errorMessage = %q, want %q", result.ErrorMessage, "config file syntax error")
 	}
+}
+
+// settingsReloadablePlugin implements SettingsReloadablePlugin.
+type settingsReloadablePlugin struct {
+	stubPlugin
+	reloader *settings.Reloader
+}
+
+func (p *settingsReloadablePlugin) SettingsReloader() *settings.Reloader {
+	return p.reloader
+}
+
+func newConfigReloadRequestWithInherited(t *testing.T, requestID uint64, inherited *api.InheritedSettings, generation uint) protocol.Request {
+	t.Helper()
+	req := &protocol.ConfigReloadRequest{
+		InheritedSettings: inherited,
+		Generation:        generation,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	merged := map[string]interface{}{}
+	if err := json.Unmarshal(data, &merged); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	merged["messageType"] = 202
+	merged["requestId"] = requestID
+	merged["username"] = "testuser"
+	merged["requestUsername"] = "admin"
+	full, err := json.Marshal(merged)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	parsed, err := protocol.RequestFromJSON(full)
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+	return parsed
+}
+
+func testInheritedSettings() api.InheritedSettings {
+	return api.InheritedSettings{
+		ServerUser:                          "rstudio-server",
+		ScratchPath:                         "/var/lib/rstudio-launcher/local",
+		LoggingDir:                          "/var/log/rstudio/launcher",
+		HeartbeatIntervalSeconds:            5,
+		JobExpiryHours:                      24,
+		PluginMetricsIntervalSeconds:        60,
+		IncludePluginMetricsIntervalSeconds: true,
+	}
+}
+
+func TestConfigReload_SettingsReloadablePlugin_Success(t *testing.T) {
+	inherited := testInheritedSettings()
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &settingsReloadablePlugin{reloader: reloader}
+
+	pushed := inherited
+	pushed.JobExpiryHours = 48
+	req := newConfigReloadRequestWithInherited(t, 11, &pushed, 7)
+
+	result := runConfigReloadHandlerWithRequest(t, p, req)
+
+	if result.ErrorType != 0 {
+		t.Errorf("errorType = %d, want 0 (None)", result.ErrorType)
+	}
+	if !containsStr(result.Applied, "job-expiry-hours") {
+		t.Errorf("applied = %v, want to contain job-expiry-hours", result.Applied)
+	}
+	if result.Generation != 7 {
+		t.Errorf("generation = %d, want 7 (echoed back)", result.Generation)
+	}
+}
+
+func TestConfigReload_SettingsReloadablePlugin_ValidationError(t *testing.T) {
+	inherited := testInheritedSettings()
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &settingsReloadablePlugin{reloader: reloader}
+
+	pushed := inherited
+	pushed.JobExpiryHours = -1
+	req := newConfigReloadRequestWithInherited(t, 12, &pushed, 3)
+
+	result := runConfigReloadHandlerWithRequest(t, p, req)
+
+	if result.ErrorType != int(api.ReloadErrorValidate) {
+		t.Errorf("errorType = %d, want %d (Validate)", result.ErrorType, api.ReloadErrorValidate)
+	}
+	if result.ErrorMessage == "" {
+		t.Error("errorMessage is empty, want a validation message")
+	}
+	if result.Generation != 3 {
+		t.Errorf("generation = %d, want 3 (echoed back even on error)", result.Generation)
+	}
+}
+
+func TestConfigReload_SettingsReloadablePlugin_AbsentInheritedSettingsDoesNotClobber(t *testing.T) {
+	inherited := testInheritedSettings()
+	inherited.ServerUser = "custom-user"
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &settingsReloadablePlugin{reloader: reloader}
+
+	// No InheritedSettings on this request (nil) - must not clobber the
+	// cache with a zero-valued struct.
+	req := newConfigReloadRequestWithInherited(t, 13, nil, 1)
+	result := runConfigReloadHandlerWithRequest(t, p, req)
+
+	if result.ErrorType != 0 {
+		t.Fatalf("errorType = %d, want 0 (None)", result.ErrorType)
+	}
+	if containsStr(result.PendingRestart, "server-user") {
+		t.Errorf("pendingRestart = %v, want NOT to contain server-user after an absent inheritedSettings push", result.PendingRestart)
+	}
+}
+
+func containsStr(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
 }

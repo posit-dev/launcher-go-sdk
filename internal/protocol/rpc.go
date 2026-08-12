@@ -450,22 +450,37 @@ type ConfigReloadResponse struct {
 	ErrorMessage string                    `json:"errorMessage"`
 
 	// Applied lists the names of inherited settings the plugin actually
-	// applied as part of this reload.
-	Applied []string `json:"applied,omitempty"`
+	// applied as part of this reload. Always present on the wire (as `[]`
+	// when nothing was applied), matching the C++ Launcher's
+	// ConfigReloadResponse::toJson(), which always emits this key rather
+	// than omitting it when empty.
+	Applied []string `json:"applied"`
 
 	// PendingRestart lists the names of inherited settings that changed but
-	// require a plugin restart to take effect.
-	PendingRestart []string `json:"pendingRestart,omitempty"`
+	// require a plugin restart to take effect. Always present on the wire,
+	// for the same reason as Applied.
+	PendingRestart []string `json:"pendingRestart"`
 
 	// Generation echoes back the Launcher's config generation stamp that
-	// this response corresponds to.
-	Generation uint `json:"generation,omitempty"`
+	// this response corresponds to. Always present on the wire (0 is a
+	// meaningful "no generation tracked yet" value, not an absent one),
+	// matching the C++ Launcher.
+	Generation uint `json:"generation"`
 }
 
-// NewConfigReloadResponse creates a new config reload response.
+// NewConfigReloadResponse creates a new config reload response. Applied and
+// PendingRestart are initialized to empty (non-nil) slices so a response
+// that never sets them still serializes as `[]`, never `null`; callers that
+// do have entries to report should overwrite these fields directly.
 func NewConfigReloadResponse(requestID, responseID uint64, errorType api.ConfigReloadErrorType, errorMessage string) *ConfigReloadResponse {
 	base := responseBase{responseConfigReload, requestID, responseID}
-	return &ConfigReloadResponse{responseBase: base, ErrorType: errorType, ErrorMessage: errorMessage}
+	return &ConfigReloadResponse{
+		responseBase:   base,
+		ErrorType:      errorType,
+		ErrorMessage:   errorMessage,
+		Applied:        []string{},
+		PendingRestart: []string{},
+	}
 }
 
 // HistogramSample is a portable snapshot of a Prometheus histogram's data,

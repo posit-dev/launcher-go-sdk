@@ -18,6 +18,7 @@ import (
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
+	"github.com/posit-dev/launcher-go-sdk/settings"
 )
 
 // Options represents configuration options for a plugin.
@@ -240,11 +241,22 @@ type LoadBalancedPlugin interface {
 // configuration reloading. When the Launcher sends a config reload request,
 // ReloadConfig will be called and the SDK writes the response automatically
 // based on the returned error. Plugins that do not implement this interface
-// will send an empty success response automatically.
+// (nor [SettingsReloadablePlugin]) are reported to the Launcher as not
+// supporting config reload at all ([api.ReloadErrorRequestNotSupported]) —
+// the SDK never claims a reload happened when the plugin has no way to
+// perform one.
 //
 // At minimum, plugins should reload user profiles and resource profiles.
 // Reloading additional configuration (e.g., the main plugin configuration
 // file) is permitted but not required.
+//
+// Plugins that also want the SDK to resolve and apply the Launcher's
+// dual-homed [server] settings (job-expiry-hours, logging-dir,
+// enable-debug-logging, etc.) and report applied/pendingRestart back to the
+// Launcher should implement [SettingsReloadablePlugin] instead: its
+// SettingsReloader's ApplyExtra hook is the equivalent extension point for
+// the same plugin-specific work ReloadConfig does here (e.g. reloading
+// profiles), so a plugin only needs one integration point.
 type ConfigReloadablePlugin interface {
 	Plugin
 
@@ -253,6 +265,28 @@ type ConfigReloadablePlugin interface {
 	// provide a classified error type, or any other error for an
 	// unclassified failure.
 	ReloadConfig(ctx context.Context) error
+}
+
+// SettingsReloadablePlugin can be implemented by plugins that want the SDK
+// to resolve, apply, and report the Launcher's dual-homed [server] settings
+// (see package settings) automatically on every config reload, instead of
+// (or in addition to) handling ReloadConfig themselves. When a plugin
+// implements this interface, the SDK calls SettingsReloader().Reload with
+// the incoming request's InheritedSettings and Generation, and populates
+// the response's applied/pendingRestart/generation fields from the result.
+// If the plugin also needs plugin-specific reload behavior (e.g. reloading
+// resource or user profiles), set [settings.Reloader.ApplyExtra] on the
+// returned Reloader rather than also implementing
+// [ConfigReloadablePlugin.ReloadConfig] — SettingsReloadablePlugin takes
+// precedence when both are implemented, so a plain ReloadConfig would never
+// be called.
+type SettingsReloadablePlugin interface {
+	Plugin
+
+	// SettingsReloader returns the plugin's *settings.Reloader, constructed
+	// once (e.g. at startup, from the plugin's own DefaultOptions and an
+	// [settings.OwnConfSource]) and reused across every reload.
+	SettingsReloader() *settings.Reloader
 }
 
 // MetricsPlugin can be implemented by plugins that want to report custom
@@ -534,25 +568,42 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 			w.WriteSetLoadBalancerNodes()
 		case *protocol.ConfigReloadRequest:
 			w = newResponseWriter(req, ch)
+			if srPlugin, ok := p.(SettingsReloadablePlugin); ok {
+				report, err := srPlugin.SettingsReloader().Reload(ctx, r.InheritedSettings, r.Generation)
+				if err != nil {
+					var verr *settings.ValidationError
+					errType := api.ReloadErrorUnknown
+					if errors.As(err, &verr) {
+						errType = api.ReloadErrorValidate
+					}
+					//nolint:errcheck // sendResponse currently always returns nil
+					w.WriteConfigReload(errType, err.Error(), nil, nil, r.Generation)
+					return
+				}
+				//nolint:errcheck // sendResponse currently always returns nil
+				w.WriteConfigReload(api.ReloadErrorNone, "", report.Applied, report.PendingRestart, r.Generation)
+				return
+			}
 			crPlugin, ok := p.(ConfigReloadablePlugin)
 			if !ok {
 				//nolint:errcheck // sendResponse currently always returns nil
-				w.WriteConfigReload(api.ReloadErrorNone, "")
+				w.WriteConfigReload(api.ReloadErrorRequestNotSupported,
+					"this plugin does not support configuration reload", nil, nil, r.Generation)
 				return
 			}
 			if err := crPlugin.ReloadConfig(ctx); err != nil {
 				var crErr *ConfigReloadError
 				if errors.As(err, &crErr) {
 					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(crErr.Type, crErr.Message)
+					w.WriteConfigReload(crErr.Type, crErr.Message, nil, nil, r.Generation)
 				} else {
 					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(api.ReloadErrorUnknown, err.Error())
+					w.WriteConfigReload(api.ReloadErrorUnknown, err.Error(), nil, nil, r.Generation)
 				}
 				return
 			}
 			//nolint:errcheck // sendResponse currently always returns nil
-			w.WriteConfigReload(api.ReloadErrorNone, "")
+			w.WriteConfigReload(api.ReloadErrorNone, "", nil, nil, r.Generation)
 		default:
 			w = newResponseWriter(req, ch)
 			//nolint:errcheck // sendResponse currently always returns nil
@@ -720,8 +771,20 @@ func (w *defaultResponseWriter) WriteSetLoadBalancerNodes() error {
 	return w.sendResponse(resp)
 }
 
-func (w *defaultResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error {
+// WriteConfigReload sends a config reload response. applied and
+// pendingRestart are coerced to non-nil (empty when nil) so the wire
+// response always carries `"applied": []`/`"pendingRestart": []` rather than
+// `null`, matching the C++ Launcher's ConfigReloadResponse::toJson(), which
+// always emits both keys.
+func (w *defaultResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, generation uint) error {
 	resp := protocol.NewConfigReloadResponse(w.req.ID(), nextResponseID(), errorType, errorMessage)
+	if applied != nil {
+		resp.Applied = applied
+	}
+	if pendingRestart != nil {
+		resp.PendingRestart = pendingRestart
+	}
+	resp.Generation = generation
 	return w.sendResponse(resp)
 }
 
