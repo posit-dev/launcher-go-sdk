@@ -162,3 +162,107 @@ func TestHandle_SettingsReloadablePlugin_NilReloader(t *testing.T) {
 		t.Errorf("echoedGeneration = %d, want 5", generation)
 	}
 }
+
+// bothPlugin implements both SettingsReloadablePlugin and
+// ConfigReloadablePlugin, so Handle's additive dispatch (I1) can be
+// exercised directly: this is the untested combination the whole-branch
+// review flagged - before the fix, a plugin implementing both would never
+// have ReloadConfig called at all.
+type bothPlugin struct {
+	reloader        *settings.Reloader
+	reloadConfigErr error
+	reloadConfigRan bool
+}
+
+func (p *bothPlugin) SettingsReloader() *settings.Reloader { return p.reloader }
+
+func (p *bothPlugin) ReloadConfig(context.Context) error {
+	p.reloadConfigRan = true
+	return p.reloadConfigErr
+}
+
+func TestHandle_BothInterfaces_BothRunOnSuccess(t *testing.T) {
+	inherited := testInheritedSettings()
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &bothPlugin{reloader: reloader}
+
+	pushed := inherited
+	pushed.JobExpiryHours = 48
+
+	errType, errMsg, applied, _, generation := Handle(context.Background(), p, &pushed, 9)
+
+	if errType != api.ReloadErrorNone {
+		t.Fatalf("errorType = %v (%s), want None", errType, errMsg)
+	}
+	if !p.reloadConfigRan {
+		t.Error("ReloadConfig was not called - implementing SettingsReloadablePlugin must not silently disable ConfigReloadablePlugin.ReloadConfig")
+	}
+	found := false
+	for _, k := range applied {
+		if k == "job-expiry-hours" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("applied = %v, want to contain job-expiry-hours (the settings reload's own work must still be reported)", applied)
+	}
+	if generation != 9 {
+		t.Errorf("echoedGeneration = %d, want 9", generation)
+	}
+}
+
+func TestHandle_BothInterfaces_SettingsSucceedsReloadConfigFails(t *testing.T) {
+	inherited := testInheritedSettings()
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &bothPlugin{
+		reloader:        reloader,
+		reloadConfigErr: &ConfigReloadError{Type: api.ReloadErrorLoad, Message: "profiles corrupt"},
+	}
+
+	pushed := inherited
+	pushed.JobExpiryHours = 48
+
+	errType, errMsg, applied, _, _ := Handle(context.Background(), p, &pushed, 1)
+
+	if !p.reloadConfigRan {
+		t.Fatal("ReloadConfig was not called")
+	}
+	// The Launcher must never be told the reload as a whole succeeded when
+	// ReloadConfig failed, even though the settings half genuinely worked.
+	if errType != api.ReloadErrorLoad {
+		t.Errorf("errorType = %v, want Load (ReloadConfig's classified error)", errType)
+	}
+	if errMsg == "" {
+		t.Error("errorMessage is empty, want an explanation mentioning the ReloadConfig failure")
+	}
+	found := false
+	for _, k := range applied {
+		if k == "job-expiry-hours" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("applied = %v, want to still contain job-expiry-hours - the settings reload genuinely applied it before ReloadConfig failed", applied)
+	}
+}
+
+func TestHandle_BothInterfaces_SettingsFailureSkipsReloadConfig(t *testing.T) {
+	inherited := testInheritedSettings()
+	reloader := settings.NewReloader(settings.Registry, settings.StaticOwnConfSource{}, inherited, 24, nil)
+	p := &bothPlugin{reloader: reloader}
+
+	pushed := inherited
+	pushed.JobExpiryHours = -1 // triggers a settings validation failure
+
+	errType, errMsg, applied, pendingRestart, _ := Handle(context.Background(), p, &pushed, 1)
+
+	if errType != api.ReloadErrorValidate {
+		t.Errorf("errorType = %v (%s), want Validate", errType, errMsg)
+	}
+	if applied != nil || pendingRestart != nil {
+		t.Errorf("applied = %v, pendingRestart = %v, want both nil on a settings validation failure", applied, pendingRestart)
+	}
+	if p.reloadConfigRan {
+		t.Error("ReloadConfig was called despite the settings reload failing - there is nothing well-defined to apply it on top of")
+	}
+}

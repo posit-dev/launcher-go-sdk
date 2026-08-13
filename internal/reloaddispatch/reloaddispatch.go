@@ -23,6 +23,7 @@ package reloaddispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/settings"
@@ -69,12 +70,31 @@ type ConfigReloadablePlugin interface {
 }
 
 // Handle implements the config-reload dispatch decision documented on
-// launcher.SettingsReloadablePlugin and launcher.ConfigReloadablePlugin:
-// SettingsReloadablePlugin takes precedence when p implements it; a
-// plugin implementing neither is reported as
-// api.ReloadErrorRequestNotSupported. generation is echoed back verbatim
-// as echoedGeneration, so every caller of Handle gets that guarantee for
-// free rather than re-threading the value itself.
+// launcher.SettingsReloadablePlugin and launcher.ConfigReloadablePlugin: the
+// two interfaces are ADDITIVE, not mutually exclusive. If p implements
+// SettingsReloadablePlugin, its Reloader runs first (dual-homed settings
+// resolve/apply/report); if p ALSO implements ConfigReloadablePlugin, its
+// ReloadConfig then runs too, for plugin-specific work (profiles, etc.)
+// that is independent of dual-homed settings. A plugin implementing neither
+// is reported as api.ReloadErrorRequestNotSupported - the SDK never claims a
+// reload happened when the plugin has no way to perform one.
+//
+// ReloadConfig only runs after a settings reload that did not itself fail.
+// If SettingsReloader().Reload fails (validation error, or a nil Reloader),
+// Handle returns immediately with that failure and does not attempt
+// ReloadConfig - there is no well-defined "apply half of dual-homed
+// settings, then also try profiles" behavior to fall back to. If the
+// settings reload succeeds but the subsequent ReloadConfig call fails,
+// Handle reports the ReloadConfig failure's classified error type (never
+// api.ReloadErrorNone) while still returning the settings reload's genuine
+// applied/pendingRestart lists - those dual-homed settings really were
+// applied/queued, so the response must not silently discard that fact, but
+// the Launcher must also never be told the reload as a whole succeeded when
+// half of it did not.
+//
+// generation is echoed back verbatim as echoedGeneration in every case
+// (including every error path), so every caller of Handle gets that
+// guarantee for free rather than re-threading the value itself.
 //
 // p is typed any (rather than a shared plugin interface) because this
 // package deliberately has nothing resembling launcher.Plugin to name -
@@ -82,7 +102,16 @@ type ConfigReloadablePlugin interface {
 func Handle(ctx context.Context, p any, inherited *api.InheritedSettings, generation uint) (errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, echoedGeneration uint) {
 	echoedGeneration = generation
 
-	if srPlugin, ok := p.(SettingsReloadablePlugin); ok {
+	srPlugin, hasSettings := p.(SettingsReloadablePlugin)
+	crPlugin, hasConfig := p.(ConfigReloadablePlugin)
+
+	if !hasSettings && !hasConfig {
+		errorType = api.ReloadErrorRequestNotSupported
+		errorMessage = "this plugin does not support configuration reload"
+		return
+	}
+
+	if hasSettings {
 		reloader := srPlugin.SettingsReloader()
 		if reloader == nil {
 			// The plugin claims to support settings reload by implementing
@@ -93,12 +122,14 @@ func Handle(ctx context.Context, p any, inherited *api.InheritedSettings, genera
 			// than ReloadErrorRequestNotSupported: RequestNotSupported would
 			// misrepresent this as "this plugin type doesn't do settings
 			// reload", when the plugin itself claims otherwise. Above all,
-			// never panic the whole plugin process on every reload request.
+			// never panic the whole plugin process on every reload request,
+			// and never fall through to ReloadConfig here - there is
+			// nothing to report a partial success against.
 			errorType = api.ReloadErrorUnknown
 			errorMessage = "plugin implements SettingsReloadablePlugin but SettingsReloader() returned nil"
 			return
 		}
-		report, err := reloader.Reload(ctx, inherited, generation)
+		report, err := reloader.Reload(ctx, inherited)
 		if err != nil {
 			var verr *settings.ValidationError
 			errorType = api.ReloadErrorUnknown
@@ -110,23 +141,33 @@ func Handle(ctx context.Context, p any, inherited *api.InheritedSettings, genera
 		}
 		applied = report.Applied
 		pendingRestart = report.PendingRestart
-		return
 	}
 
-	crPlugin, ok := p.(ConfigReloadablePlugin)
-	if !ok {
-		errorType = api.ReloadErrorRequestNotSupported
-		errorMessage = "this plugin does not support configuration reload"
+	if !hasConfig {
 		return
 	}
 	if err := crPlugin.ReloadConfig(ctx); err != nil {
 		var crErr *ConfigReloadError
+		var crType api.ConfigReloadErrorType
+		var crMessage string
 		if errors.As(err, &crErr) {
-			errorType = crErr.Type
-			errorMessage = crErr.Message
+			crType = crErr.Type
+			crMessage = crErr.Message
 		} else {
-			errorType = api.ReloadErrorUnknown
-			errorMessage = err.Error()
+			crType = api.ReloadErrorUnknown
+			crMessage = err.Error()
+		}
+		errorType = crType
+		if hasSettings {
+			// The settings reload above genuinely succeeded (applied/
+			// pendingRestart, set above, are real) - fold ReloadConfig's
+			// failure in without erasing that, but make the partial nature
+			// of the outcome explicit in the message rather than reporting
+			// ReloadConfig's message alone, which would read as if nothing
+			// had happened at all.
+			errorMessage = fmt.Sprintf("dual-homed settings reload succeeded, but ReloadConfig failed: %s", crMessage)
+		} else {
+			errorMessage = crMessage
 		}
 		return
 	}

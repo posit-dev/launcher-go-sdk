@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestReloader_AppliesJobExpiryChange(t *testing.T) {
 
 	pushed := inherited
 	pushed.JobExpiryHours = 48
-	report, err := r.Reload(context.Background(), &pushed, 1)
+	report, err := r.Reload(context.Background(), &pushed)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
@@ -46,7 +47,7 @@ func TestReloader_NoChangeMeansNotApplied(t *testing.T) {
 	inherited := testInherited() // starts at 24 hours
 	r := NewReloader(Registry, StaticOwnConfSource{}, inherited, 24, nil)
 
-	report, err := r.Reload(context.Background(), &inherited, 1)
+	report, err := r.Reload(context.Background(), &inherited)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
@@ -61,7 +62,7 @@ func TestReloader_InvalidJobExpiry_NoPartialApply(t *testing.T) {
 
 	pushed := inherited
 	pushed.JobExpiryHours = -5
-	_, err := r.Reload(context.Background(), &pushed, 1)
+	_, err := r.Reload(context.Background(), &pushed)
 	if err == nil {
 		t.Fatal("Reload() error = nil, want validation error for negative job-expiry-hours")
 	}
@@ -85,12 +86,12 @@ func TestReloader_PresenceAwareCacheUpdate_AbsentPushDoesNotClobber(t *testing.T
 	// An absent push (nil) must not reset the cached inherited settings to
 	// a zero-valued struct - it must be treated as "the launcher had
 	// nothing new to push this time", not "reset everything".
-	_, err := r.Reload(context.Background(), nil, 2)
+	_, err := r.Reload(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
 
-	report, err := r.Reload(context.Background(), nil, 3)
+	report, err := r.Reload(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
@@ -111,7 +112,7 @@ func TestReloader_PendingRestart_BaselineIsStartupNotCached(t *testing.T) {
 	// First push changes server-user away from the startup baseline.
 	pushed1 := startup
 	pushed1.ServerUser = "pushed-user"
-	report1, err := r.Reload(context.Background(), &pushed1, 1)
+	report1, err := r.Reload(context.Background(), &pushed1)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
@@ -125,7 +126,7 @@ func TestReloader_PendingRestart_BaselineIsStartupNotCached(t *testing.T) {
 	// pending restart.
 	pushed2 := startup
 	pushed2.ServerUser = "original-user"
-	report2, err := r.Reload(context.Background(), &pushed2, 2)
+	report2, err := r.Reload(context.Background(), &pushed2)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
@@ -147,7 +148,7 @@ func TestReloader_PendingRestart_OwnConfSourcedKeyComparedAgainstInheritedBaseli
 	own := StaticOwnConfSource{"server-user": "own-conf-user"}
 	r := NewReloader(Registry, own, startup, 24, nil)
 
-	report, err := r.Reload(context.Background(), nil, 1)
+	report, err := r.Reload(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
@@ -169,10 +170,10 @@ func TestReloader_ApplyExtra_CalledEveryReload(t *testing.T) {
 		return nil
 	}
 
-	if _, err := r.Reload(context.Background(), nil, 1); err != nil {
+	if _, err := r.Reload(context.Background(), nil); err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
-	if _, err := r.Reload(context.Background(), nil, 2); err != nil {
+	if _, err := r.Reload(context.Background(), nil); err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
 
@@ -190,11 +191,40 @@ func TestReloader_ApplyExtra_ErrorIsNonFatal(t *testing.T) {
 		return errors.New("plugin-specific apply failed")
 	}
 
-	report, err := r.Reload(context.Background(), nil, 1)
+	report, err := r.Reload(context.Background(), nil)
 	if err != nil {
 		t.Errorf("Reload() error = %v, want nil (ApplyExtra failures are non-fatal)", err)
 	}
 	_ = report
+}
+
+// TestReloader_ApplyExtra_ErrorIsLoggedEvenWithNilLogger is the regression
+// test for the ApplyExtra half of I3: before the fix, passing nil as
+// NewReloader's lgr silenced an ApplyExtra failure completely - the
+// Launcher would be told the reload succeeded with no observable trace of
+// the failure anywhere, the same "reported applied when it was not" class
+// of defect F9 fixed one layer up. NewReloader now documents nil as "use
+// slog.Default()", not "disable logging"; this pins that the failure is
+// genuinely observable via slog.Default() even when lgr is nil.
+func TestReloader_ApplyExtra_ErrorIsLoggedEvenWithNilLogger(t *testing.T) {
+	var logged bool
+	handler := slog.NewTextHandler(&testWriter{t: t, seen: &logged}, nil)
+	prev := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	inherited := testInherited()
+	r := NewReloader(Registry, StaticOwnConfSource{}, inherited, 24, nil) // lgr left nil
+	r.ApplyExtra = func(context.Context) error {
+		return errors.New("plugin-specific apply failed")
+	}
+
+	if _, err := r.Reload(context.Background(), nil); err != nil {
+		t.Fatalf("Reload() error = %v, want nil (ApplyExtra failures are non-fatal)", err)
+	}
+	if !logged {
+		t.Error("expected the ApplyExtra failure to be logged via slog.Default() even with lgr unset")
+	}
 }
 
 func TestReloader_ConcurrentReloadsAreSerialized(_ *testing.T) {
@@ -208,7 +238,7 @@ func TestReloader_ConcurrentReloadsAreSerialized(_ *testing.T) {
 			defer wg.Done()
 			pushed := inherited
 			pushed.JobExpiryHours = float64(n)
-			_, _ = r.Reload(context.Background(), &pushed, uint(n)) //nolint:gosec // test loop index is small
+			_, _ = r.Reload(context.Background(), &pushed)
 		}(i)
 	}
 	wg.Wait()

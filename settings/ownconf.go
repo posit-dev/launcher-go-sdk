@@ -51,8 +51,32 @@ func (s StaticOwnConfSource) OwnConfKeys() map[string]string {
 // the unnamed default section.
 //
 // Read failures (missing file, permission error, malformed syntax) are
-// best-effort: OwnConfKeys logs (if Logger is set) and returns an empty map,
-// rather than erroring, matching the OwnConfSource contract.
+// best-effort: OwnConfKeys logs and returns an empty map, rather than
+// erroring, matching the OwnConfSource contract.
+//
+// Known divergences from the C++ isolation parser (boost::program_options),
+// all confined to the raw string a key resolves to - not to presence, which
+// is what provenance actually depends on. None of these are fixed: ini.v1
+// and boost::program_options are different libraries with different
+// syntaxes, and making them agree byte-for-byte on every edge case is not a
+// goal of this SDK. If a plugin's own-conf file relies on any of these
+// shapes, its resolved raw value (and therefore a RestartRequired key's
+// pendingRestart classification) can disagree between the two
+// implementations for the identical file:
+//   - Inline comments: ini.v1 strips a trailing `; comment` (and `#
+//     comment`) from a value; boost strips only `#` comments and treats `;`
+//     as an ordinary character. `logging-dir=/a/b ; note` resolves to
+//     `/a/b` in Go, `/a/b ; note` in C++.
+//   - Quoted values: ini.v1 strips surrounding double quotes from a value;
+//     boost does not. `server-user="svc"` resolves to `svc` in Go, `"svc"`
+//     in C++.
+//   - Bare flag-style lines (see markBareKeysAsEmpty) and genuinely
+//     malformed lines are handled by two structurally different parsers
+//     (a section-unaware rewrite pass here vs. boost's own tolerant
+//     parsing there); see settings/testdata/settings-resolver-conformance.md's
+//     "KNOWN DIVERGENCE" section for the malformed-line case in detail
+//     (that file is a read-only copy of the C++ repo's canonical fixture
+//     doc - do not edit it here).
 type IniOwnConfSource struct {
 	// Path is the plugin's own config file path. Must be resolved by the
 	// caller using the exact same procedure the plugin's startup option
@@ -66,7 +90,15 @@ type IniOwnConfSource struct {
 	// defaults to [DualHomedKeys] of [Registry].
 	Keys []string
 
-	// Logger, if set, receives a warning when Path cannot be read. Optional.
+	// Logger receives a warning when Path cannot be read or parsed. If nil,
+	// [slog.Default] is used instead - there is no way to silence this
+	// warning entirely. A silent own-conf read/parse failure here would
+	// mean every dual-homed key falls back to ProvenanceInherited, quietly
+	// overwriting the operator's explicit own-conf values with the
+	// Launcher's cascaded ones while still reporting the reload as a
+	// success; the C++ isolation parser always LOG_ERRORs the equivalent
+	// failure, so this mirrors that rather than adding a "no logger" mode
+	// the C++ side does not have.
 	Logger *slog.Logger
 }
 
@@ -75,6 +107,11 @@ func (s IniOwnConfSource) OwnConfKeys() map[string]string {
 	result := map[string]string{}
 	if s.Path == "" {
 		return result
+	}
+
+	lgr := s.Logger
+	if lgr == nil {
+		lgr = slog.Default()
 	}
 
 	keys := s.Keys
@@ -88,8 +125,8 @@ func (s IniOwnConfSource) OwnConfKeys() map[string]string {
 		// ownConfPath.exists() check (no own-conf file configured is not a
 		// failure worth logging). Any other read error (permission denied,
 		// path is a directory, ...) is logged as a best-effort failure.
-		if s.Logger != nil && !errors.Is(err, os.ErrNotExist) {
-			s.Logger.Warn("settings: failed to read own-conf file for reload provenance; treating as no keys present",
+		if !errors.Is(err, os.ErrNotExist) {
+			lgr.Warn("settings: failed to read own-conf file for reload provenance; treating as no keys present",
 				"path", s.Path, "error", err)
 		}
 		return result
@@ -106,10 +143,8 @@ func (s IniOwnConfSource) OwnConfKeys() map[string]string {
 
 	cfg, err := ini.LoadSources(ini.LoadOptions{Loose: true, AllowBooleanKeys: true}, prepared)
 	if err != nil {
-		if s.Logger != nil {
-			s.Logger.Warn("settings: failed to parse own-conf file for reload provenance; treating as no keys present",
-				"path", s.Path, "error", err)
-		}
+		lgr.Warn("settings: failed to parse own-conf file for reload provenance; treating as no keys present",
+			"path", s.Path, "error", err)
 		return result
 	}
 
@@ -129,6 +164,17 @@ func (s IniOwnConfSource) OwnConfKeys() map[string]string {
 // string "true" for a bare key). This is what makes IniOwnConfSource match
 // the C++ isolation parser's "" for a bare flag-style entry, without having
 // to abandon ini.v1 for the rest of the file's parsing.
+//
+// This rewrite pass is section-unaware: it matches a bare key line
+// regardless of which (if any) [section] header precedes it in raw, and
+// OwnConfKeys itself only ever reads cfg.Section("") afterward. The
+// Launcher's own .conf format for these keys has no sections in practice,
+// so this is not a live bug, but it means a key of the same name appearing
+// under an actual `[section]` elsewhere in the file would also be rewritten
+// here even though OwnConfKeys would never read it. This is a known,
+// accepted simplification, not something this SDK attempts to fix — a
+// section-aware rewrite would need to duplicate ini.v1's own section
+// parsing before ini.v1 has even run.
 func markBareKeysAsEmpty(raw []byte, keys []string) []byte {
 	keySet := make(map[string]bool, len(keys))
 	for _, k := range keys {

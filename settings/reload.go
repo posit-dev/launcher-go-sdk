@@ -58,10 +58,17 @@ type Reloader struct {
 	// job-expiry-hours has been resolved and applied), for plugin-specific
 	// apply side effects the SDK cannot know about (e.g. reloading resource
 	// or user profiles) — the same role bindings_.applyExtra plays in the
-	// C++ reload routine. A failure is logged (if a logger was supplied to
-	// [NewReloader]) but never propagated: it does not fail the reload or
+	// C++ reload routine. A failure is logged (always — see [NewReloader]'s
+	// lgr parameter) but never propagated: it does not fail the reload or
 	// affect Applied/PendingRestart, which describe only the dual-homed
 	// [server] settings.
+	//
+	// Timing contract: set this once, before the Reloader's first Reload
+	// call (typically right after [NewReloader] returns, before the
+	// Reloader is wired into a running plugin). Reload reads this field
+	// under its internal mutex, but nothing synchronizes a concurrent
+	// write to it against that read - assigning it after reloads may
+	// already be in flight is a data race.
 	ApplyExtra func(ctx context.Context) error
 
 	mu sync.Mutex
@@ -88,15 +95,23 @@ type Reloader struct {
 // NewReloader creates a Reloader for the given registry, own-conf source,
 // and startup state. seedInherited is the InheritedSettings this plugin
 // instance was actually started with (both the initial cache and the
-// immutable startup baseline); seedJobExpiryHours is the job-expiry-hours
-// value startup resolved (typically the same value used to compute
-// launcher.DefaultOptions.JobExpiry). lgr is optional and receives
-// non-fatal error logs (e.g. ApplyExtra failures); pass nil to disable.
+// immutable startup baseline) — see [launcher.DefaultOptions.InheritedSettings]
+// for a helper that builds this from the plugin's own parsed options;
+// seedJobExpiryHours is the job-expiry-hours value startup resolved
+// (typically [launcher.DefaultOptions.JobExpiryHours]). lgr receives
+// non-fatal error logs (e.g. ApplyExtra failures, or an own-conf read/parse
+// failure from an [OwnConfSource] like [IniOwnConfSource]); pass nil to use
+// [slog.Default] rather than to disable logging — both of those failure
+// paths are logged unconditionally, matching the C++ reload routine, which
+// always LOG_ERRORs them and has no "no logger" mode.
 //
 // The job-expiry snapshot is seeded immediately from seedJobExpiryHours —
 // callers must not rely on a first Reload() call to make a non-default
 // startup value visible; see [Snapshot]'s seeding requirement.
 func NewReloader(registry []SettingDescriptor, ownConf OwnConfSource, seedInherited api.InheritedSettings, seedJobExpiryHours float64, lgr *slog.Logger) *Reloader {
+	if lgr == nil {
+		lgr = slog.Default()
+	}
 	return &Reloader{
 		registry:         registry,
 		ownConf:          ownConf,
@@ -156,7 +171,17 @@ func (r *Reloader) LastResolved() ResolvedSettings {
 // On a validation error, Reload returns a *[ValidationError] and leaves all
 // state (including the job-expiry snapshot) exactly as it was — no partial
 // apply.
-func (r *Reloader) Reload(ctx context.Context, pushed *api.InheritedSettings, _ uint) (Report, error) {
+//
+// Reload does not itself take a generation parameter: the Launcher's
+// request generation is a wire-protocol concern (see
+// internal/reloaddispatch.Handle, which echoes it back verbatim), not
+// something the resolve/validate/apply/report sequence here needs. The C++
+// reload routine's equivalent value tags the .active last-known-good
+// artifact it writes after every reload (SettingsReloadRoutine.cpp); the Go
+// SDK writes no such artifact (see the package doc and docs/GUIDE.md's
+// known limitations), so there is currently nothing for a generation
+// parameter here to do.
+func (r *Reloader) Reload(ctx context.Context, pushed *api.InheritedSettings) (Report, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -215,7 +240,7 @@ func (r *Reloader) Reload(ctx context.Context, pushed *api.InheritedSettings, _ 
 	// reconfiguration.
 
 	if r.ApplyExtra != nil {
-		if err := r.ApplyExtra(ctx); err != nil && r.lgr != nil {
+		if err := r.ApplyExtra(ctx); err != nil {
 			r.lgr.Error("settings: plugin-specific reload apply failed", "error", err)
 		}
 	}

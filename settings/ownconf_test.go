@@ -138,6 +138,35 @@ func (w *testWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// TestIniOwnConfSource_NilLogger_StillLogsViaSlogDefault is the regression
+// test for the own-conf half of I3: before the fix, a nil Logger silenced
+// the read/parse-failure warning entirely, which is the serious case - it
+// meant every dual-homed key silently fell back to ProvenanceInherited,
+// quietly reverting an operator's own-conf values to the Launcher's
+// cascaded ones while the reload still reported success. NewReloader
+// documents Logger as optional ("pass nil to use slog.Default()"), and this
+// pins that slog.Default() genuinely receives the warning rather than the
+// warning vanishing.
+func TestIniOwnConfSource_NilLogger_StillLogsViaSlogDefault(t *testing.T) {
+	dirAsPath := t.TempDir() // a directory is not a valid conf file
+
+	var logged bool
+	handler := slog.NewTextHandler(&testWriter{t: t, seen: &logged}, nil)
+	prev := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	src := IniOwnConfSource{Path: dirAsPath, Keys: []string{"job-expiry-hours"}} // Logger left nil
+	got := src.OwnConfKeys()
+
+	if len(got) != 0 {
+		t.Errorf("OwnConfKeys() = %v, want empty map for unreadable file", got)
+	}
+	if !logged {
+		t.Error("expected the read failure to be logged via slog.Default() even with Logger unset")
+	}
+}
+
 func TestIniOwnConfSource_DefaultsKeysToRegistry(t *testing.T) {
 	path := writeConf(t, "job-expiry-hours=48\n")
 	src := IniOwnConfSource{Path: path} // Keys left unset.
