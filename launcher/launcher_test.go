@@ -97,6 +97,90 @@ func TestDefaultOptions_JobExpiryHours(t *testing.T) {
 	}
 }
 
+// TestDefaultOptions_Validate_RejectsNegativeJobExpiryHours is the
+// regression test for I4: the C++ plugin base rejects a negative
+// job-expiry-hours at startup (OptionsBase.cpp, "ensure job expiry hours
+// are positive"), and settings.Reloader.Reload rejects it identically on
+// reload. Before this fix, DefaultOptions.Validate() computed JobExpiry
+// from a negative value with no sign check at all, so startup silently
+// accepted a config that an identical, unchanged reload would then reject -
+// breaking the fixpoint property (startup and reload must agree on
+// identical input) the whole dual-homed settings design depends on.
+func TestDefaultOptions_Validate_RejectsNegativeJobExpiryHours(t *testing.T) {
+	tests := []struct {
+		name    string
+		hours   float64
+		wantErr bool
+	}{
+		{"negative", -1, true},
+		{"negative-fractional", -0.5, true},
+		{"zero", 0, false},
+		{"positive", 24, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &DefaultOptions{JobExpiryHours: tt.hours}
+			err := opts.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Validate() error = nil, want an error for job-expiry-hours = %v", tt.hours)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() error = %v, want nil for job-expiry-hours = %v", err, tt.hours)
+			}
+		})
+	}
+}
+
+// TestDefaultOptions_InheritedSettings verifies the I2 seed helper: a plugin
+// author should be able to build a faithful api.InheritedSettings straight
+// from a parsed DefaultOptions, without hand-reconstructing job-expiry-hours
+// from the derived JobExpiry duration (lossy above ~2,562,047 hours) or
+// guessing at fields the Launcher never puts on the command line.
+func TestDefaultOptions_InheritedSettings(t *testing.T) {
+	var opts DefaultOptions
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	opts.AddFlags(fs, "default")
+	if err := fs.Parse([]string{
+		"--server-user", "custom-user",
+		"--scratch-path", "/custom/scratch",
+		"--logging-dir", "/custom/log",
+		"--heartbeat-interval-seconds", "7",
+		"--job-expiry-hours", "12.5",
+		"--plugin-metrics-interval-seconds", "42",
+		"--enable-debug-logging", "1",
+	}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if err := opts.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	got := opts.InheritedSettings(true)
+	want := api.InheritedSettings{
+		ServerUser:                          "custom-user",
+		EnableDebugLogging:                  true,
+		ScratchPath:                         "/custom/scratch",
+		LoggingDir:                          "/custom/log",
+		HeartbeatIntervalSeconds:            7,
+		JobExpiryHours:                      12.5,
+		PluginMetricsIntervalSeconds:        42,
+		IncludePluginMetricsIntervalSeconds: true,
+	}
+	if got != want {
+		t.Errorf("InheritedSettings(true) = %+v, want %+v", got, want)
+	}
+
+	// IncludePluginMetricsIntervalSeconds must be exactly the caller's
+	// argument, not derived from anything DefaultOptions parsed - it is not
+	// knowable from the plugin's own flags.
+	if got := opts.InheritedSettings(false); got.IncludePluginMetricsIntervalSeconds {
+		t.Error("InheritedSettings(false).IncludePluginMetricsIntervalSeconds = true, want false")
+	}
+}
+
 // stubPlugin implements Plugin with no-op methods.
 type stubPlugin struct{}
 

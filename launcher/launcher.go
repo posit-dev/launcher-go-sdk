@@ -81,7 +81,18 @@ type DefaultOptions struct {
 	// to the Launcher. When zero, metrics collection is disabled.
 	MetricsInterval time.Duration
 
-	jobExpiryHours         float64
+	// JobExpiryHours is the parsed --job-expiry-hours value, in hours (the
+	// same unit JobExpiry is derived from). It is exported (unlike
+	// heartbeatSeconds/metricsIntervalSeconds below) because a plugin
+	// implementing [SettingsReloadablePlugin] needs it verbatim to seed
+	// [settings.NewReloader]'s seedJobExpiryHours parameter faithfully;
+	// reconstructing it from JobExpiry.Hours() is lossy above roughly
+	// 2,562,047 hours (int64 time.Duration overflow) and is otherwise just
+	// an unnecessary round trip through a derived value. Prefer
+	// [DefaultOptions.InheritedSettings] over reading this field directly
+	// when seeding a Reloader.
+	JobExpiryHours float64
+
 	heartbeatSeconds       uint
 	metricsIntervalSeconds uint
 	threadPoolSize         uint64
@@ -105,7 +116,7 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 			o.Debug = b
 			return nil
 		})
-	f.Float64Var(&o.jobExpiryHours, "job-expiry-hours", 24,
+	f.Float64Var(&o.JobExpiryHours, "job-expiry-hours", 24,
 		"amount of hours before completed jobs are removed from the system")
 	// Set by Launcher but not used by any (known) plugin. If the upstream
 	// Launcher service became unresponsive and stopped sending heartbeats,
@@ -137,10 +148,56 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 
 // Validate implements Options.
 func (o *DefaultOptions) Validate() error {
-	o.JobExpiry = time.Duration(float64(time.Hour) * o.jobExpiryHours)
+	// Matches the C++ plugin base's startup check (OptionsBase.cpp,
+	// "ensure job expiry hours are positive") and settings.Reloader.Reload's
+	// identical rejection of a negative job-expiry-hours. Without this,
+	// startup would silently accept a value that a later reload of the
+	// same, unchanged configuration would reject - startup and reload must
+	// agree on identical input, which is the fixpoint property the
+	// dual-homed settings design depends on.
+	if o.JobExpiryHours < 0 {
+		return errors.New("job-expiry-hours must be a positive number")
+	}
+	o.JobExpiry = time.Duration(float64(time.Hour) * o.JobExpiryHours)
 	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds)     //nolint:gosec // CLI flag values are small integers
 	o.MetricsInterval = time.Second * time.Duration(o.metricsIntervalSeconds) //nolint:gosec // CLI flag values are small integers
 	return nil
+}
+
+// InheritedSettings builds an [api.InheritedSettings] from o's parsed
+// values, for seeding a [settings.Reloader] via [settings.NewReloader]'s
+// seedInherited parameter so the Reloader's startup baseline genuinely
+// matches what this plugin instance was started with. Call it after
+// Validate (typically right after [LoadOptions]/[MustLoadOptions] returns).
+//
+// includePluginMetricsIntervalSeconds sets the returned value's
+// IncludePluginMetricsIntervalSeconds field verbatim - the caller must
+// supply it explicitly because a plugin cannot derive it from its own
+// flags. The Launcher decides this per cluster type (some cluster types do
+// not support plugin metrics collection) and never passes it to the plugin
+// on the command line, so it is not one of DefaultOptions' parsed fields.
+// Guessing wrong here does not fail anything visibly: it produces a
+// plugin-metrics-interval-seconds baseline the plugin's own
+// plugin-metrics-interval-seconds resolve can never match (the field is
+// omitted from every [api.InheritedSettings] push when false, see
+// [settings.RawByKey]), so every single reload reports
+// plugin-metrics-interval-seconds as permanently pending-restart even
+// though nothing actually changed. Set it to whatever value this plugin's
+// own SubmitJob/ClusterInfo implementation already uses to decide whether
+// it participates in plugin-metrics-interval-seconds at all - if unsure,
+// confirm against the Launcher's cluster-type-specific behavior rather
+// than guessing true or false.
+func (o *DefaultOptions) InheritedSettings(includePluginMetricsIntervalSeconds bool) api.InheritedSettings {
+	return api.InheritedSettings{
+		ServerUser:                          o.ServerUser,
+		EnableDebugLogging:                  o.Debug,
+		ScratchPath:                         o.ScratchPath,
+		LoggingDir:                          o.LoggingDir,
+		HeartbeatIntervalSeconds:            o.heartbeatSeconds,
+		JobExpiryHours:                      o.JobExpiryHours,
+		PluginMetricsIntervalSeconds:        o.metricsIntervalSeconds,
+		IncludePluginMetricsIntervalSeconds: includePluginMetricsIntervalSeconds,
+	}
 }
 
 // LoadOptions loads options from command-line flags.
@@ -254,10 +311,13 @@ type LoadBalancedPlugin interface {
 // Plugins that also want the SDK to resolve and apply the Launcher's
 // dual-homed [server] settings (job-expiry-hours, logging-dir,
 // enable-debug-logging, etc.) and report applied/pendingRestart back to the
-// Launcher should implement [SettingsReloadablePlugin] instead: its
-// SettingsReloader's ApplyExtra hook is the equivalent extension point for
-// the same plugin-specific work ReloadConfig does here (e.g. reloading
-// profiles), so a plugin only needs one integration point.
+// Launcher should ALSO implement [SettingsReloadablePlugin] (this interface
+// and that one are additive, not alternatives - see that type's doc comment
+// for the combined-implementation contract). ReloadConfig here remains the
+// right place for plugin-specific reload work (profiles, etc.); the
+// returned Reloader's ApplyExtra hook is an alternative for the same kind of
+// work if a plugin prefers not to implement ReloadConfig at all, not a
+// requirement to move it there.
 type ConfigReloadablePlugin interface {
 	Plugin
 
@@ -270,17 +330,28 @@ type ConfigReloadablePlugin interface {
 
 // SettingsReloadablePlugin can be implemented by plugins that want the SDK
 // to resolve, apply, and report the Launcher's dual-homed [server] settings
-// (see package settings) automatically on every config reload, instead of
-// (or in addition to) handling ReloadConfig themselves. When a plugin
-// implements this interface, the SDK calls SettingsReloader().Reload with
-// the incoming request's InheritedSettings and Generation, and populates
-// the response's applied/pendingRestart/generation fields from the result.
-// If the plugin also needs plugin-specific reload behavior (e.g. reloading
-// resource or user profiles), set [settings.Reloader.ApplyExtra] on the
-// returned Reloader rather than also implementing
-// [ConfigReloadablePlugin.ReloadConfig] — SettingsReloadablePlugin takes
-// precedence when both are implemented, so a plain ReloadConfig would never
-// be called.
+// (see package settings) automatically on every config reload. When a
+// plugin implements this interface, the SDK calls SettingsReloader().Reload
+// with the incoming request's InheritedSettings, and populates the
+// response's applied/pendingRestart/generation fields from the result.
+//
+// This interface and [ConfigReloadablePlugin] are ADDITIVE: a plugin may
+// implement either one alone, or both together, and both are honored. When
+// both are implemented, the SDK runs the settings reload first and then
+// (only if that succeeded) calls ReloadConfig too - neither interface
+// silently disables the other, so an existing ConfigReloadablePlugin that
+// later also adopts SettingsReloadablePlugin does not lose its ReloadConfig
+// behavior. If the settings reload itself fails (e.g. a validation error),
+// ReloadConfig is not called and the failure is reported as-is; if the
+// settings reload succeeds but the subsequent ReloadConfig call fails, the
+// response reports ReloadConfig's classified error (never success) while
+// still including the settings reload's genuine applied/pendingRestart
+// lists - the Launcher is never told a reload fully succeeded when half of
+// it did not.
+//
+// Plugin-specific reload work (profiles, etc.) can go in
+// [settings.Reloader.ApplyExtra], in ReloadConfig, or split between the
+// two, at the plugin author's discretion - both extension points run.
 type SettingsReloadablePlugin interface {
 	Plugin
 
