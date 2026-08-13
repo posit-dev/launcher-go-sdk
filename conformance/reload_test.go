@@ -77,3 +77,35 @@ func TestRunReload_ConfigReloadablePlugin(t *testing.T) {
 	p := &configReloadTestPlugin{testPlugin: *newTestPlugin(t)}
 	conformance.RunReload(t, p, conformance.ReloadOpts{})
 }
+
+// TestRunReload_SettingsReloadablePlugin_OwnConfOwnsRestartRequiredKey is the
+// regression test for I6: before the fix, RunReload's
+// AppliedAndPendingRestartClassification and
+// AbsentInheritedSettingsDoesNotClobberCache subtests assumed every
+// RestartRequired key was controlled by the pushed InheritedSettings, and
+// would false-fail a correct plugin whose own conf legitimately sets one of
+// them (own-conf wins over the pushed value, per the whole design's
+// precedence rule). This plugin's own conf sets scratch-path explicitly, to
+// the exact value seed.ScratchPath already has, so scratch-path never
+// becomes pendingRestart no matter what RunReload pushes - the old
+// assertions ("pendingRestart must contain every RestartRequired key",
+// keyed off "server-user" specifically for the cache-clobber precondition)
+// would have failed here for a plugin that is behaving correctly.
+func TestRunReload_SettingsReloadablePlugin_OwnConfOwnsRestartRequiredKey(t *testing.T) {
+	seed := api.InheritedSettings{
+		ServerUser:                          "rstudio-server",
+		EnableDebugLogging:                  false,
+		ScratchPath:                         "/var/lib/rstudio-launcher/local",
+		LoggingDir:                          "/var/log/rstudio/launcher",
+		HeartbeatIntervalSeconds:            5,
+		JobExpiryHours:                      24,
+		PluginMetricsIntervalSeconds:        60,
+		IncludePluginMetricsIntervalSeconds: true,
+	}
+	ownConf := settings.StaticOwnConfSource{"scratch-path": seed.ScratchPath}
+	p := &settingsReloadTestPlugin{
+		testPlugin: *newTestPlugin(t),
+		reloader:   settings.NewReloader(settings.Registry, ownConf, seed, seed.JobExpiryHours, nil),
+	}
+	conformance.RunReload(t, p, conformance.ReloadOpts{StartupInherited: seed})
+}

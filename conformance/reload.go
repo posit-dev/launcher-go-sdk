@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
@@ -81,6 +82,15 @@ type ReloadOpts struct {
 	// AbsentInheritedSettingsDoesNotClobberCache, since both rely on the
 	// Reloader's own immutable startup baseline (see the settings package
 	// doc) equaling this value.
+	//
+	// Both of those subtests are own-conf-aware: they recompute their
+	// expectations from the plugin's actual resolved values
+	// (reloader.LastResolved(), read after the reload) rather than assuming
+	// every RestartRequired key is controlled by the pushed
+	// InheritedSettings. A key the plugin's own conf legitimately sets is
+	// own-conf's to win regardless of what is pushed - that is correct
+	// dual-homed-settings behavior, not a plugin defect, so RunReload does
+	// not fail a plugin for it.
 	//
 	// Required for every subtest that needs [launcher.SettingsReloadablePlugin];
 	// those subtests are skipped, not failed, when p does not implement it.
@@ -178,17 +188,44 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 				t.Errorf("echoed generation = %d, want 7", generation)
 			}
 
-			if !containsKey(applied, "job-expiry-hours") {
-				t.Errorf("applied = %v, want to contain job-expiry-hours: it changed from the Reloader's current value and is Reloadable", applied)
+			// Recompute expectations from what the plugin's Reloader
+			// actually resolved, rather than assuming every RestartRequired
+			// key is controlled by the pushed InheritedSettings: if the
+			// plugin's own conf legitimately sets one of these keys,
+			// own-conf wins regardless of what was just pushed, and that
+			// is correct behavior, not a defect to fail on.
+			resolved := reloader.LastResolved()
+			if resolved == nil {
+				t.Fatal("reloader.LastResolved() is nil immediately after a successful reload")
 			}
 
-			for _, key := range wantRestartRequired {
-				if !containsKey(pendingRestart, key) {
-					t.Errorf("pendingRestart = %v, want to contain %q: it changed from the startup baseline (ReloadOpts.StartupInherited) and is RestartRequired", pendingRestart, key)
+			if rv, ok := resolved["job-expiry-hours"]; ok {
+				parsed, err := strconv.ParseFloat(rv.Raw, 64)
+				wantApplied := err == nil && parsed != beforeHours
+				gotApplied := containsKey(applied, "job-expiry-hours")
+				if wantApplied != gotApplied {
+					t.Errorf("applied contains job-expiry-hours = %v, want %v (resolved raw %q, provenance %v, value before this reload %v)",
+						gotApplied, wantApplied, rv.Raw, rv.Provenance, beforeHours)
 				}
 			}
-			if len(pendingRestart) != len(wantRestartRequired) {
-				t.Errorf("pendingRestart = %v, want exactly %v (no extra keys)", pendingRestart, wantRestartRequired)
+
+			baseline := settings.RawByKey(opts.StartupInherited)
+			for _, key := range wantRestartRequired {
+				rv, ok := resolved[key]
+				if !ok {
+					continue
+				}
+				wantPending := rv.Raw != baseline[key]
+				gotPending := containsKey(pendingRestart, key)
+				if wantPending != gotPending {
+					t.Errorf("pendingRestart contains %q = %v, want %v (resolved raw %q vs startup baseline raw %q, provenance %v) - if this plugin's own conf legitimately sets %[1]q, own-conf wins over the pushed value, which is correct; verify ReloadOpts.StartupInherited still matches what settings.NewReloader was actually seeded with",
+						key, gotPending, wantPending, rv.Raw, baseline[key], rv.Provenance)
+				}
+			}
+			for _, key := range pendingRestart {
+				if !containsKey(wantRestartRequired, key) {
+					t.Errorf("pendingRestart contains %q, want only keys from %v", key, wantRestartRequired)
+				}
 			}
 		})
 
@@ -202,6 +239,12 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 				t.Fatal("SettingsReloader() returned nil; construct a *settings.Reloader before calling RunReload")
 			}
 
+			// NOTE: like AppliedAndPendingRestartClassification above, this
+			// subtest assumes job-expiry-hours is not itself own-conf-owned
+			// for this plugin - if it is, own-conf's value wins regardless
+			// of the -1 pushed here, validation never runs against it, and
+			// the Fatalf below will misleadingly read as a broken plugin
+			// rather than "this key is legitimately own-conf-controlled."
 			beforeHours, beforeDuration := reloader.JobExpiry()
 
 			invalid := opts.StartupInherited
@@ -225,30 +268,60 @@ func RunReload(t *testing.T, p launcher.Plugin, opts ReloadOpts) {
 		})
 
 		t.Run("AbsentInheritedSettingsDoesNotClobberCache", func(t *testing.T) {
-			if _, ok := p.(launcher.SettingsReloadablePlugin); !ok {
+			srPlugin, ok := p.(launcher.SettingsReloadablePlugin)
+			if !ok {
 				t.Skip("plugin does not implement SettingsReloadablePlugin; presence-aware caching only applies to it")
+			}
+			reloader := srPlugin.SettingsReloader()
+			if reloader == nil {
+				t.Fatal("SettingsReloader() returned nil; construct a *settings.Reloader before calling RunReload")
 			}
 
 			pushed := opts.StartupInherited
 			pushed.ServerUser += "-conformance-cached-user"
+			pushed.ScratchPath += "-conformance-cached-path"
+			pushed.HeartbeatIntervalSeconds++
+			pushed.PluginMetricsIntervalSeconds++
 
 			errType, errMsg, _, pendingRestart1, _ := reloaddispatch.Handle(context.Background(), p, &pushed, 1)
 			if errType != api.ReloadErrorNone {
 				t.Fatalf("setup reload errorType = %v (%s), want None", errType, errMsg)
 			}
-			if !containsKey(pendingRestart1, "server-user") {
-				t.Fatalf("setup reload pendingRestart = %v, want to contain server-user (this subtest's precondition failed - it changed from ReloadOpts.StartupInherited and is RestartRequired)", pendingRestart1)
+
+			// Find a RestartRequired key this plugin's own conf does not
+			// own (provenance Inherited) and whose resolved value actually
+			// moved away from the startup baseline, so we have something
+			// genuinely pending to probe cache persistence with. A plugin
+			// whose own conf sets every RestartRequired key cannot be
+			// probed this way - own-conf always wins regardless of what is
+			// pushed, so nothing here would ever be cache-dependent for
+			// such a plugin.
+			resolved := reloader.LastResolved()
+			baseline := settings.RawByKey(opts.StartupInherited)
+			var probeKey string
+			for _, key := range wantRestartRequired {
+				if rv, ok := resolved[key]; ok && rv.Provenance == settings.ProvenanceInherited && rv.Raw != baseline[key] {
+					probeKey = key
+					break
+				}
+			}
+			if probeKey == "" {
+				t.Skip("no RestartRequired key resolved via inherited provenance with a value different from the startup baseline; cannot probe cache persistence (this plugin's own conf may set all of them)")
+			}
+
+			if !containsKey(pendingRestart1, probeKey) {
+				t.Fatalf("setup reload pendingRestart = %v, want to contain %q (this subtest's precondition failed)", pendingRestart1, probeKey)
 			}
 
 			// A reload with no InheritedSettings at all (e.g. a
 			// plugin-internal or signal-triggered reload, or an older
 			// Launcher that never populates the field) must not clobber
-			// the cached server-user with a zero-valued struct - doing so
-			// would make it disagree with the startup baseline again and
-			// silently drop server-user from pendingRestart.
+			// the cached value with a zero-valued struct - doing so would
+			// make it disagree with the startup baseline again for the
+			// wrong reason and silently drop probeKey from pendingRestart.
 			_, _, _, pendingRestart2, _ := reloaddispatch.Handle(context.Background(), p, nil, 2)
-			if !containsKey(pendingRestart2, "server-user") {
-				t.Errorf("reload with nil InheritedSettings: pendingRestart = %v, want to still contain server-user - an absent push must not reset the cached value", pendingRestart2)
+			if !containsKey(pendingRestart2, probeKey) {
+				t.Errorf("reload with nil InheritedSettings: pendingRestart = %v, want to still contain %q - an absent push must not reset the cached value", pendingRestart2, probeKey)
 			}
 		})
 	})
