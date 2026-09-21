@@ -739,11 +739,11 @@ func TestJobConfig_StructFields(t *testing.T) {
 	}
 }
 
-func TestAPIVersion_Is_3_10_0(t *testing.T) {
-	// The Go SDK must mirror the C++ Launcher's plugin API version exactly;
-	// the Launcher bumped to 3.10.0 for the config-reload additive fields.
-	if APIVersion.Major != 3 || APIVersion.Minor != 10 || APIVersion.Patch != 0 {
-		t.Errorf("APIVersion = %d.%d.%d, want 3.10.0", APIVersion.Major, APIVersion.Minor, APIVersion.Patch)
+func TestAPIVersion_Is_3_11_0(t *testing.T) {
+	// The Go SDK must mirror the C++ Launcher's plugin API version exactly; the Launcher bumped to
+	// 3.11.0 for the config-reload additive fields (3.10 was taken by the job-control Kill-reason field).
+	if APIVersion.Major != 3 || APIVersion.Minor != 11 || APIVersion.Patch != 0 {
+		t.Errorf("APIVersion = %d.%d.%d, want 3.11.0", APIVersion.Major, APIVersion.Minor, APIVersion.Patch)
 	}
 }
 

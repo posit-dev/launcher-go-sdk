@@ -317,7 +317,7 @@ func TestConfigReloadRequest_AbsentInheritedSettings_IsNil(t *testing.T) {
 }
 
 func TestConfigReloadRequest_NoGenerationOrInheritedSettings_Defaults(t *testing.T) {
-	// A request with none of the new fields at all (mimicking a pre-3.10.0
+	// A request with none of the new fields at all (mimicking a pre-3.11.0
 	// Launcher, or a reload that carries nothing new) must still parse.
 	input := `{"messageType": 202, "requestId": 1, "requestUsername": "admin", "username": "testuser"}`
 

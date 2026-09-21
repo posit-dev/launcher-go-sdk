@@ -286,7 +286,7 @@
       }
     },
     {
-      "description": "Own-conf carries enable-debug-logging as a bare flag (present, no value token) - distinct from 'present with value \"0\"'. Both C++ (parseOwnConfKeysInIsolation) and the Go SDK (fixed in commit 5f5a513) must yield presence with an empty raw value.",
+      "description": "Own-conf carries enable-debug-logging as a bare flag (present, no value token) - distinct from 'present with value \"0\"'. Both C++ (parseOwnConfKeysInIsolation) and the Go SDK must yield presence with an empty raw value.",
       "expected": {
         "enable-debug-logging": {
           "provenance": "own-conf",
