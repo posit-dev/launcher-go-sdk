@@ -140,7 +140,7 @@ func TestMockResponseWriter_DefensiveCopies(t *testing.T) {
 	_ = w.WriteJobs([]*api.Job{{ID: "j1"}})
 	_ = w.WriteControlJob(true, "ok")
 	_ = w.WriteJobNetwork("host", []string{"1.2.3.4"})
-	_ = w.WriteConfigReload(api.ReloadErrorNone, "")
+	_ = w.WriteConfigReload(api.ReloadErrorNone, "", nil, nil, 0)
 
 	// Mutate every returned slice; recorded state must not move.
 	got := w.Errors()

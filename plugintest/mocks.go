@@ -46,10 +46,16 @@ type NetworkInfo struct {
 	Addresses []string
 }
 
-// ConfigReloadResult represents a config reload operation result.
+// ConfigReloadResult represents a config reload operation result, including
+// the dual-homed-settings fields ([launcher.SettingsReloadablePlugin]
+// populates Applied/PendingRestart/Generation; a plain
+// [launcher.ConfigReloadablePlugin] leaves them at their zero values).
 type ConfigReloadResult struct {
-	ErrorType    api.ConfigReloadErrorType
-	ErrorMessage string
+	ErrorType      api.ConfigReloadErrorType
+	ErrorMessage   string
+	Applied        []string
+	PendingRestart []string
+	Generation     uint
 }
 
 // NewMockResponseWriter creates a new MockResponseWriter.
@@ -122,13 +128,18 @@ func (m *MockResponseWriter) WriteClusterInfo(opts launcher.ClusterOptions) erro
 	return nil
 }
 
-// WriteConfigReload captures config reload responses for test assertions.
-func (m *MockResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error {
+// WriteConfigReload captures config reload responses for test assertions,
+// including the applied/pendingRestart/generation fields a
+// [launcher.SettingsReloadablePlugin] populates.
+func (m *MockResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, generation uint) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.configReloadResults = append(m.configReloadResults, ConfigReloadResult{
-		ErrorType:    errorType,
-		ErrorMessage: errorMessage,
+		ErrorType:      errorType,
+		ErrorMessage:   errorMessage,
+		Applied:        applied,
+		PendingRestart: pendingRestart,
+		Generation:     generation,
 	})
 	return nil
 }
