@@ -102,11 +102,14 @@ func (j jobDetails) LogValue() slog.Value {
 	)
 }
 
+// jobDetailsUser is the username in the jobDetails values that tests log.
+const jobDetailsUser = "carmen"
+
 func TestHandleLogValuerGroup(t *testing.T) {
 	lgr, buf := newBufferLogger(t)
-	lgr.Warn("op", "job", jobDetails{ID: "99", User: "carmen"})
+	lgr.Warn("op", "job", jobDetails{ID: "99", User: jobDetailsUser})
 	props := extractProps(buf.String())
-	want := []string{"job.id: 99", "job.user: carmen"}
+	want := []string{"job.id: 99", "job.user: " + jobDetailsUser}
 	if len(props) != len(want) {
 		t.Fatalf("got %v, want %v", props, want)
 	}
@@ -219,7 +222,7 @@ func TestHandleAnyNonError(t *testing.T) {
 	}
 }
 
-// TestIssue15Reproducer is the verbatim test from issue #15. It exercises
+// TestIssue15Reproducer is adapted from the test in issue #15. It exercises
 // the full NewLogger -> file path and asserts that scalar, slog.Group, and
 // LogValuer-as-group attributes all reach the log file.
 func TestIssue15Reproducer(t *testing.T) {
@@ -240,7 +243,7 @@ func TestIssue15Reproducer(t *testing.T) {
 		))
 
 	// Case 2: slog.LogValuer returning a group.
-	lgr.Warn("operation failed", "job", jobDetails{ID: "99", User: "carmen"})
+	lgr.Warn("operation failed", "job", jobDetails{ID: "99", User: jobDetailsUser})
 
 	output, err := os.ReadFile(filepath.Join(dir, "test.log")) //nolint:gosec // dir is from t.TempDir()
 	if err != nil {
@@ -252,7 +255,7 @@ func TestIssue15Reproducer(t *testing.T) {
 		" WARNING ",
 		"id: 11", "user: alice",
 		"job.id: 42", "job.user: bob",
-		"job.id: 99", "job.user: carmen",
+		"job.id: 99", "job.user: " + jobDetailsUser,
 	} {
 		if !strings.Contains(string(output), want) {
 			t.Errorf("field %q is missing from log output", want)

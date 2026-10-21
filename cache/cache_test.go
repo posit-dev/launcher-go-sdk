@@ -11,6 +11,14 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/api"
 )
 
+// testUser is the job owner in tests that need a username.
+const testUser = "alice"
+
+// newRunningJob returns a running job with ID "job-1" that belongs to user.
+func newRunningJob(user string) *api.Job {
+	return &api.Job{ID: "job-1", User: user, Status: api.StatusRunning}
+}
+
 // TestCloseStopsGoroutine verifies that Close() fully stops the cache's
 // internal goroutine without leaking it. Regression test for #18, where the
 // goroutine could block forever sending on an unbuffered done channel.
@@ -59,7 +67,7 @@ func TestNotifyCloseConcurrent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewJobCache: %v", err)
 		}
-		job := &api.Job{ID: "job-1", User: "alice", Status: api.StatusRunning}
+		job := newRunningJob(testUser)
 		if err := c.AddOrUpdate(job); err != nil {
 			t.Fatalf("AddOrUpdate: %v", err)
 		}
@@ -118,7 +126,7 @@ func TestSubscribeAfterClose(t *testing.T) {
 	}
 
 	chUser := make(chan *statusUpdate, 1)
-	c.subscribeToUser(ctx, "alice", chUser)
+	c.subscribeToUser(ctx, testUser, chUser)
 	select {
 	case _, ok := <-chUser:
 		if ok {
@@ -148,7 +156,7 @@ func TestSubscriberCanceledContextCloseGuard(t *testing.T) {
 
 	// Trigger a Notify() pass — Notify sees the canceled context, sets
 	// sub.closed=true, and closes ch.
-	job := &api.Job{ID: "job-1", User: "alice", Status: api.StatusRunning}
+	job := newRunningJob(testUser)
 	if err := c.AddOrUpdate(job); err != nil {
 		t.Fatalf("AddOrUpdate: %v", err)
 	}
@@ -171,12 +179,8 @@ func TestSubscriberCanceledContextCloseGuard(t *testing.T) {
 // "noJobForSession".
 func TestJobsForUserPreservesSessionTags(t *testing.T) {
 	sessionID := "s12345678904321"
-	job := &api.Job{
-		ID:     "job-1",
-		User:   "alice",
-		Status: api.StatusRunning,
-		Tags:   []string{sessionID, "rstudio-r-session-id:" + sessionID},
-	}
+	job := newRunningJob(testUser)
+	job.Tags = []string{sessionID, "rstudio-r-session-id:" + sessionID}
 
 	tests := []struct {
 		name   string
@@ -212,7 +216,7 @@ func TestJobsForUserPreservesSessionTags(t *testing.T) {
 			}
 
 			var got []*api.Job
-			if err := store.JobsForUser("alice", tt.filter, func(jobs []*api.Job) {
+			if err := store.JobsForUser(testUser, tt.filter, func(jobs []*api.Job) {
 				got = jobs
 			}); err != nil {
 				t.Fatalf("JobsForUser: %v", err)
