@@ -596,15 +596,12 @@ func (o JobOperation) String() string {
 	return "Cancel"
 }
 
-// ControlJobOptions carries optional, caller-supplied details of a job control
-// request.
+// ControlJobOptions carries optional details of a job control request.
 //
-// StatusMessage and StatusCode record why a job was killed (for example, an
-// operator kill versus an out-of-memory kill). The Launcher only sends them
-// with OperationKill and limits each to 256 bytes, so plugins can use them
-// as given. A plugin that records them should save them on the job's
-// StatusMsg and StatusCode fields so they appear in later status updates.
-// Both are empty when the caller supplies no reason.
+// StatusMessage and StatusCode record why a job was killed, for example an
+// operator kill versus an out-of-memory kill. The Launcher only sends them
+// with OperationKill, already validated to at most 256 bytes each. To report
+// them, save them on the job's StatusMsg and StatusCode fields.
 type ControlJobOptions struct {
 	StatusMessage string
 	StatusCode    string

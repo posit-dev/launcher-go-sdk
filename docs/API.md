@@ -184,7 +184,7 @@ Performs a control operation on a job (stop, kill, cancel, suspend, resume).
 - `user` - Username performing the operation
 - `id` - Job identifier
 - `op` - Operation to perform (see [api.JobOperation](#type-joboperation))
-- `opts` - Optional caller-supplied details (see [api.ControlJobOptions](#type-controljoboptions)). The Launcher only sets the kill reason with `OperationKill`
+- `opts` - Optional Kill reason (see [api.ControlJobOptions](#type-controljoboptions))
 
 #### Method: GetJobStatus
 
@@ -751,9 +751,7 @@ type ControlJobOptions struct {
 }
 ```
 
-Optional details sent with a `ControlJob` request. `StatusMessage` and `StatusCode` record why a job was killed, for example an operator kill versus an out-of-memory kill. The Launcher only sends them with `OperationKill` and limits each to 256 bytes. Both are empty when the caller doesn't give a reason.
-
-A plugin that records the reason sets them on the job's `StatusMsg` and `StatusCode` fields, so they appear in later status updates. Plugins that don't need the reason can ignore `opts`.
+`StatusMessage` and `StatusCode` record why a job was killed, for example an operator kill versus an out-of-memory kill. The Launcher only sends them with `OperationKill`, already validated to at most 256 bytes each. To report them, save them on the job's `StatusMsg` and `StatusCode` fields. Plugins that don't need the reason can ignore `opts`.
 
 ### Type: JobOutput
 
