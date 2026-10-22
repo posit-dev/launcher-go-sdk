@@ -66,7 +66,7 @@ Every response from the plugin includes:
 | 7 | Get Job Resource Util | Stream resource utilization metrics for a job. |
 | 8 | Get Job Network | Get network information (hostname, IPs) for a job. |
 | 9 | Get Cluster Info | Get cluster capabilities and configuration. |
-| 17 | Multi Cluster Info | Get capabilities for multiple clusters. |
+| 17 | Multi Cluster Info | Get capabilities for multiple clusters. Extension: the Launcher does not send it. See [MultiClusterPlugin](#type-multiclusterplugin-optional-interface). |
 | 201 | Set Load Balancer Nodes | Update load-balanced node list. |
 | 202 | Config Reload | Request configuration reload. |
 | 203 | Metrics Response | Periodic plugin metrics (plugin-initiated, no request). |
@@ -280,6 +280,21 @@ Plugins that want to report custom metrics to the Launcher implement this interf
 
 Implementations should return quickly and avoid blocking I/O.
 
+### Type: MultiClusterPlugin (optional interface)
+
+```go
+type MultiClusterPlugin interface {
+    Plugin
+    GetClusters(ctx context.Context, w MultiClusterResponseWriter, user string)
+}
+```
+
+Plugins that offer more than one cluster implement this interface. The runtime calls `GetClusters` when it receives a Multi Cluster Info request (type 17). The plugin sends one `ClusterOptions` value per cluster with `WriteClusters`, and sets `Name` on each value.
+
+Multi Cluster Info is an extension to the plugin API. The Launcher does not send it, but other hosts that speak the plugin protocol can.
+
+If a plugin does not implement this interface, the runtime answers a type 17 request with the plugin's `ClusterInfo` response (response type 8).
+
 ### Type: PluginMetrics
 
 ```go
@@ -449,6 +464,17 @@ Close()
 
 Closes the stream. Must be called when streaming is complete.
 
+### Type: MultiClusterResponseWriter
+
+```go
+type MultiClusterResponseWriter interface {
+    ResponseWriter
+    WriteClusters(clusters []ClusterOptions) error
+}
+```
+
+Extends ResponseWriter for [MultiClusterPlugin](#type-multiclusterplugin-optional-interface). `WriteClusters` sends a Multi Cluster Info response (type 17) with one entry per cluster, in the given order.
+
 ### Type: Runtime
 
 ```go
@@ -559,6 +585,7 @@ type ClusterOptions struct {
     Configs      []api.JobConfig
     Constraints  []api.PlacementConstraint
     Profiles     []api.ResourceProfile
+    Name         string
 }
 ```
 
@@ -572,6 +599,7 @@ Describes cluster capabilities returned by ClusterInfo. Posit products use this 
 - `Configs` - Custom configuration options beyond the built-in settings
 - `Constraints` - Placement constraints that may be requested for a job (e.g., node type, availability zone)
 - `Profiles` - Predefined resource profiles (named bundles of resource limits for easy selection)
+- `Name` - Cluster name for Multi Cluster Info responses (see [MultiClusterPlugin](#type-multiclusterplugin-optional-interface)). Omitted from the response when empty.
 
 ### Type: ImageOptions
 
@@ -1197,7 +1225,7 @@ The plugintest package provides testing utilities for plugin development.
 
 `MockResponseWriter` and `MockStreamResponseWriter` are in-memory mocks of `launcher.ResponseWriter` and `launcher.StreamResponseWriter`. They capture every `Write*` call into private state observable through accessor methods.
 
-The accessors are safe to call concurrently with `Write*` methods — useful when a test observes captured state while the plugin under test is still streaming. Bare-noun accessors (`Errors`, `Jobs`, `Statuses`, etc.) return snapshot slices taken under a read lock; the writer never subsequently mutates already-recorded entries. Two accessors deep-copy their payload so callers may freely mutate at every level: `Networks` (the inner `Addresses` slice is cloned) and `ClusterInfo` (every slice field of `ClusterOptions`, including the nested `ImageOpt.Images` and per-`ResourceProfile` `Limits`, is cloned).
+The accessors are safe to call concurrently with `Write*` methods — useful when a test observes captured state while the plugin under test is still streaming. Bare-noun accessors (`Errors`, `Jobs`, `Statuses`, etc.) return snapshot slices taken under a read lock; the writer never subsequently mutates already-recorded entries. Three accessors deep-copy their payload so callers may freely mutate at every level: `Networks` (the inner `Addresses` slice is cloned), `ClusterInfo` (every slice field of `ClusterOptions`, including the nested `ImageOpt.Images` and per-`ResourceProfile` `Limits`, is cloned), and `Clusters` (each `ClusterOptions` element is cloned the same way as `ClusterInfo`).
 
 For the full method list, helper types (`ControlResult`, `NetworkInfo`, `StatusUpdate`, etc.), and per-method aliasing notes, see the godoc:
 

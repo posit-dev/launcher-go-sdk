@@ -9,8 +9,9 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/launcher"
 )
 
-// MockResponseWriter is a mock implementation of launcher.ResponseWriter that
-// captures all responses for test assertions.
+// MockResponseWriter is a mock implementation of launcher.ResponseWriter and
+// launcher.MultiClusterResponseWriter that captures all responses for test
+// assertions.
 //
 // All accessor methods are safe to call concurrently with Write* methods.
 // They return snapshots taken under a read lock; the writer does not
@@ -31,6 +32,7 @@ type MockResponseWriter struct {
 	controlResults      []ControlResult
 	networks            []NetworkInfo
 	clusterInfo         *launcher.ClusterOptions
+	clusters            []launcher.ClusterOptions
 	configReloadResults []ConfigReloadResult
 }
 
@@ -119,6 +121,16 @@ func (m *MockResponseWriter) WriteClusterInfo(opts launcher.ClusterOptions) erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clusterInfo = &opts
+	return nil
+}
+
+// WriteClusters implements launcher.MultiClusterResponseWriter.
+func (m *MockResponseWriter) WriteClusters(clusters []launcher.ClusterOptions) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Keep a non-nil slice so that Clusters() can tell an empty write from
+	// no write at all.
+	m.clusters = append([]launcher.ClusterOptions{}, clusters...)
 	return nil
 }
 
@@ -244,17 +256,41 @@ func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions {
 	if m.clusterInfo == nil {
 		return nil
 	}
-	cp := *m.clusterInfo
-	cp.Constraints = slices.Clone(m.clusterInfo.Constraints)
-	cp.Queues = slices.Clone(m.clusterInfo.Queues)
-	cp.Limits = slices.Clone(m.clusterInfo.Limits)
-	cp.Configs = slices.Clone(m.clusterInfo.Configs)
-	cp.Profiles = slices.Clone(m.clusterInfo.Profiles)
+	cp := cloneClusterOptions(m.clusterInfo)
+	return &cp
+}
+
+// Clusters returns a deep-copy snapshot of the cluster list from the most
+// recent WriteClusters call, or nil if WriteClusters has not been called.
+// Each element is deep-copied in the same way as ClusterInfo.
+func (m *MockResponseWriter) Clusters() []launcher.ClusterOptions {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.clusters == nil {
+		return nil
+	}
+	out := make([]launcher.ClusterOptions, len(m.clusters))
+	for i := range m.clusters {
+		out[i] = cloneClusterOptions(&m.clusters[i])
+	}
+	return out
+}
+
+// cloneClusterOptions returns a copy of o in which every slice field, the
+// nested ImageOpt.Images slice, and each ResourceProfile's inner Limits slice
+// are freshly allocated.
+func cloneClusterOptions(o *launcher.ClusterOptions) launcher.ClusterOptions {
+	cp := *o
+	cp.Constraints = slices.Clone(o.Constraints)
+	cp.Queues = slices.Clone(o.Queues)
+	cp.Limits = slices.Clone(o.Limits)
+	cp.Configs = slices.Clone(o.Configs)
+	cp.Profiles = slices.Clone(o.Profiles)
 	for i := range cp.Profiles {
 		cp.Profiles[i].Limits = slices.Clone(cp.Profiles[i].Limits)
 	}
-	cp.ImageOpt.Images = slices.Clone(m.clusterInfo.ImageOpt.Images)
-	return &cp
+	cp.ImageOpt.Images = slices.Clone(o.ImageOpt.Images)
+	return cp
 }
 
 // ConfigReloadResults returns a snapshot slice of every config reload result
@@ -275,6 +311,7 @@ func (m *MockResponseWriter) Reset() {
 	m.controlResults = []ControlResult{}
 	m.networks = []NetworkInfo{}
 	m.clusterInfo = nil
+	m.clusters = nil
 	m.configReloadResults = []ConfigReloadResult{}
 }
 

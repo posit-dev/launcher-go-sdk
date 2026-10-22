@@ -236,6 +236,19 @@ type LoadBalancedPlugin interface {
 	SyncNodes(nodes []api.Node)
 }
 
+// MultiClusterPlugin can be implemented by plugins that offer more than one
+// cluster. It is an extension to the plugin API: the Launcher does not send
+// multi-cluster requests, but other hosts that speak the plugin protocol can.
+// If a plugin does not implement this interface, the runtime answers a
+// multi-cluster request with the plugin's ClusterInfo response.
+type MultiClusterPlugin interface {
+	Plugin
+
+	// GetClusters writes the options of each available cluster with
+	// [MultiClusterResponseWriter.WriteClusters].
+	GetClusters(ctx context.Context, w MultiClusterResponseWriter, user string)
+}
+
 // ConfigReloadablePlugin can be implemented by plugins that support runtime
 // configuration reloading. When the Launcher sends a config reload request,
 // ReloadConfig will be called and the SDK writes the response automatically
@@ -317,6 +330,13 @@ type StreamResponseWriter interface {
 	Close() error
 }
 
+// MultiClusterResponseWriter is the interface for writing multi-cluster
+// responses.
+type MultiClusterResponseWriter interface {
+	ResponseWriter
+	WriteClusters(clusters []ClusterOptions) error
+}
+
 // ClusterOptions describes the capabilities and configuration of a cluster.
 type ClusterOptions struct {
 	Constraints  []api.PlacementConstraint
@@ -326,6 +346,10 @@ type ClusterOptions struct {
 	ImageOpt     ImageOptions
 	Configs      []api.JobConfig
 	Profiles     []api.ResourceProfile
+
+	// Name identifies the cluster in a multi-cluster response. It is
+	// omitted from the response when empty.
+	Name string
 }
 
 func (o *ClusterOptions) toProtocol() protocol.ClusterInfo {
@@ -342,6 +366,7 @@ func (o *ClusterOptions) toProtocol() protocol.ClusterInfo {
 		Configs:        o.Configs,
 		Profiles:       o.Profiles,
 		HostNetwork:    o.ImageOpt.HostNetwork,
+		Name:           o.Name,
 	}
 }
 
@@ -524,6 +549,14 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 		case *protocol.ClusterInfoRequest:
 			w = newResponseWriter(req, ch)
 			p.ClusterInfo(ctx, w, r.Username)
+		case *protocol.MultiClusterInfoRequest:
+			w = newResponseWriter(req, ch)
+			mcPlugin, ok := p.(MultiClusterPlugin)
+			if !ok {
+				p.ClusterInfo(ctx, w, r.Username)
+				return
+			}
+			mcPlugin.GetClusters(ctx, w, r.Username)
 		case *protocol.SetLoadBalancerNodesRequest:
 			w = newResponseWriter(req, ch)
 			lbPlugin, ok := p.(LoadBalancedPlugin)
@@ -703,6 +736,15 @@ func (w *defaultResponseWriter) WriteJobNetwork(host string, addr []string) erro
 func (w *defaultResponseWriter) WriteClusterInfo(o ClusterOptions) error {
 	resp := protocol.NewClusterInfoResponse(w.req.ID(), nextResponseID(),
 		o.toProtocol())
+	return w.sendResponse(resp)
+}
+
+func (w *defaultResponseWriter) WriteClusters(clusters []ClusterOptions) error {
+	infos := make([]protocol.ClusterInfo, len(clusters))
+	for i := range clusters {
+		infos[i] = clusters[i].toProtocol()
+	}
+	resp := protocol.NewMultiClusterInfoResponse(w.req.ID(), nextResponseID(), infos)
 	return w.sendResponse(resp)
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/posit-dev/launcher-go-sdk/api"
+	"github.com/posit-dev/launcher-go-sdk/launcher"
 	"github.com/posit-dev/launcher-go-sdk/plugintest"
 )
 
@@ -274,6 +275,65 @@ func TestMockResponseWriter_ClusterInfoIsDeepCopied(t *testing.T) {
 	if len(again.Profiles) != 1 || len(again.Profiles[0].Limits) != 1 ||
 		again.Profiles[0].Limits[0].Value != "1Gi" {
 		t.Errorf("ClusterInfo() Profiles[0].Limits leaked: %+v", again.Profiles)
+	}
+}
+
+// TestMockResponseWriter_Clusters verifies that Clusters() returns nil before
+// WriteClusters is called, returns a deep copy of the most recent write, and
+// returns nil again after Reset.
+func TestMockResponseWriter_Clusters(t *testing.T) {
+	w := plugintest.NewMockResponseWriter()
+	var _ launcher.MultiClusterResponseWriter = w
+
+	if got := w.Clusters(); got != nil {
+		t.Fatalf("Clusters() before WriteClusters = %+v, want nil", got)
+	}
+
+	if err := w.WriteClusters(nil); err != nil {
+		t.Fatalf("WriteClusters: %v", err)
+	}
+	if got := w.Clusters(); got == nil || len(got) != 0 {
+		t.Fatalf("Clusters() after nil write = %+v, want empty non-nil slice", got)
+	}
+
+	local := plugintest.NewClusterOptions().WithQueue("default").Build()
+	local.Name = "Local"
+	local.Profiles = []api.ResourceProfile{{
+		Name:   "small",
+		Limits: []api.ResourceLimit{{Type: "memory", Value: "1Gi"}},
+	}}
+	k8s := plugintest.NewClusterOptions().WithImage("ubuntu:24.04").Build()
+	k8s.Name = "Kubernetes"
+	written := []launcher.ClusterOptions{local, k8s}
+	if err := w.WriteClusters(written); err != nil {
+		t.Fatalf("WriteClusters: %v", err)
+	}
+	written[0].Name = "rewritten by caller"
+
+	got := w.Clusters()
+	if len(got) != 2 || got[0].Name != "Local" || got[1].Name != "Kubernetes" {
+		t.Fatalf("Clusters() = %+v, want Local and Kubernetes", got)
+	}
+
+	got[0].Name = "rewritten"
+	got[0].Queues[0] = "rewritten"
+	got[0].Profiles[0].Limits[0].Value = "rewritten"
+	got[1].ImageOpt.Images[0] = "rewritten"
+
+	again := w.Clusters()
+	if again[0].Name != "Local" || again[0].Queues[0] != "default" {
+		t.Errorf("Clusters() leaked mutation: %+v", again[0])
+	}
+	if again[0].Profiles[0].Limits[0].Value != "1Gi" {
+		t.Errorf("Clusters() Profiles[0].Limits leaked: %+v", again[0].Profiles)
+	}
+	if again[1].ImageOpt.Images[0] != "ubuntu:24.04" {
+		t.Errorf("Clusters() ImageOpt.Images leaked: %+v", again[1].ImageOpt.Images)
+	}
+
+	w.Reset()
+	if got := w.Clusters(); got != nil {
+		t.Errorf("Clusters() after Reset = %+v, want nil", got)
 	}
 }
 

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi Cluster Info extension (message type 17)**: plugins that offer more than one cluster can implement the optional `MultiClusterPlugin` interface and reply with `MultiClusterResponseWriter.WriteClusters`. `ClusterOptions` gains a `Name` field (`"name"` on the wire, omitted when empty). The Launcher does not send this request; other hosts that speak the plugin protocol can. If a plugin does not implement the interface, the runtime answers with the plugin's `ClusterInfo` response. `plugintest.MockResponseWriter` records `WriteClusters` calls and exposes them through `Clusters()` ([#64](https://github.com/posit-dev/launcher-go-sdk/issues/64)).
 - **Plugin API 3.9.0**: `Job` gains an optional `SystemJob` field (`"systemJob"` on the wire). Marks a system/utility job that bypasses resource-profile enforcement; only honored on privileged requests.
 - **Plugin API 3.8.0**: `PlacementConstraint` gains an optional `Default` field (`"defaultValue"` on the wire). The Launcher uses this to surface a pre-fill hint for constraint inputs in Workbench.
 

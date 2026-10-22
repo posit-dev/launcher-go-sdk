@@ -73,6 +73,8 @@ func requestForType(rt requestType) (interface{}, error) {
 		return &JobNetworkRequest{}, nil
 	case requestClusterInfo:
 		return &ClusterInfoRequest{}, nil
+	case requestMultiClusterInfo:
+		return &MultiClusterInfoRequest{}, nil
 	case requestSetLoadBalancerNodes:
 		return &SetLoadBalancerNodesRequest{}, nil
 	case requestConfigReload:
@@ -95,6 +97,7 @@ const (
 	requestJobResourceUtil
 	requestJobNetwork
 	requestClusterInfo
+	requestMultiClusterInfo     requestType = 17
 	requestSetLoadBalancerNodes requestType = 201
 	requestConfigReload         requestType = 202
 )
@@ -198,6 +201,13 @@ type ClusterInfoRequest struct {
 	BaseUserRequest
 }
 
+// MultiClusterInfoRequest is the multi-cluster info request. It is an
+// extension to the plugin API: the Launcher does not send it, but other hosts
+// that speak the plugin protocol can.
+type MultiClusterInfoRequest struct {
+	BaseUserRequest
+}
+
 // SetLoadBalancerNodesRequest is the set load balanced nodes request.
 type SetLoadBalancerNodesRequest struct {
 	BaseUserRequest
@@ -222,6 +232,7 @@ const (
 	responseJobResourceUtil
 	responseJobNetwork
 	responseClusterInfo
+	responseMultiClusterInfo     responseType = 17
 	responseSetLoadBalancerNodes responseType = 201
 	responseConfigReload         responseType = 202
 	responseMetrics              responseType = 203
@@ -401,24 +412,47 @@ type ClusterInfo struct {
 	AllowUnknown   bool                      `json:"allowUnknownImages"`
 	Profiles       []api.ResourceProfile     `json:"resourceProfiles"`
 	HostNetwork    bool                      `json:"containersUseHostNetwork"`
+	Name           string                    `json:"name,omitempty"`
+}
+
+// withEmptySlices replaces nil slices with empty ones so that they encode as
+// [] and not null.
+func (c ClusterInfo) withEmptySlices() ClusterInfo {
+	if c.Configs == nil {
+		c.Configs = []api.JobConfig{}
+	}
+	if c.Constraints == nil {
+		c.Constraints = []api.PlacementConstraint{}
+	}
+	if c.Limits == nil {
+		c.Limits = []api.ResourceLimit{}
+	}
+	if c.Profiles == nil {
+		c.Profiles = []api.ResourceProfile{}
+	}
+	return c
 }
 
 // NewClusterInfoResponse creates a new cluster info response.
 func NewClusterInfoResponse(requestID, responseID uint64, cluster ClusterInfo) *ClusterInfoResponse {
 	base := responseBase{responseClusterInfo, requestID, responseID}
-	if cluster.Configs == nil {
-		cluster.Configs = []api.JobConfig{}
+	return &ClusterInfoResponse{responseBase: base, ClusterInfo: cluster.withEmptySlices()}
+}
+
+// MultiClusterInfoResponse is the multi-cluster info response.
+type MultiClusterInfoResponse struct {
+	responseBase
+	Clusters []ClusterInfo `json:"clusters"`
+}
+
+// NewMultiClusterInfoResponse creates a new multi-cluster info response.
+func NewMultiClusterInfoResponse(requestID, responseID uint64, clusters []ClusterInfo) *MultiClusterInfoResponse {
+	base := responseBase{responseMultiClusterInfo, requestID, responseID}
+	out := make([]ClusterInfo, len(clusters)) // Ensure we never send null.
+	for i := range clusters {
+		out[i] = clusters[i].withEmptySlices()
 	}
-	if cluster.Constraints == nil {
-		cluster.Constraints = []api.PlacementConstraint{}
-	}
-	if cluster.Limits == nil {
-		cluster.Limits = []api.ResourceLimit{}
-	}
-	if cluster.Profiles == nil {
-		cluster.Profiles = []api.ResourceProfile{}
-	}
-	return &ClusterInfoResponse{responseBase: base, ClusterInfo: cluster}
+	return &MultiClusterInfoResponse{responseBase: base, Clusters: out}
 }
 
 // SetLoadBalancerNodesResponse is the set load balanced nodes response.

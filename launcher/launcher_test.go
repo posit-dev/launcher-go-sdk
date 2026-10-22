@@ -204,3 +204,108 @@ func TestConfigReload_WrappedConfigReloadError(t *testing.T) {
 		t.Errorf("errorMessage = %q, want %q", result.ErrorMessage, "config file syntax error")
 	}
 }
+
+// singleClusterPlugin answers ClusterInfo with one named cluster and does not
+// implement MultiClusterPlugin.
+type singleClusterPlugin struct {
+	stubPlugin
+}
+
+func (singleClusterPlugin) ClusterInfo(_ context.Context, w ResponseWriter, _ string) {
+	//nolint:errcheck // sendResponse currently always returns nil
+	w.WriteClusterInfo(ClusterOptions{Name: "Local"})
+}
+
+// multiClusterPlugin implements MultiClusterPlugin.
+type multiClusterPlugin struct {
+	stubPlugin
+	user string
+}
+
+func (p *multiClusterPlugin) GetClusters(_ context.Context, w MultiClusterResponseWriter, user string) {
+	p.user = user
+	//nolint:errcheck // sendResponse currently always returns nil
+	w.WriteClusters([]ClusterOptions{
+		{Name: "Local"},
+		{Name: "Kubernetes", Queues: []string{"default"}},
+	})
+}
+
+// multiClusterInfoResult unmarshals either a multi-cluster info response or
+// the single-cluster info response the runtime sends as a fallback.
+type multiClusterInfoResult struct {
+	MessageType int    `json:"messageType"`
+	RequestID   uint64 `json:"requestId"`
+	Name        string `json:"name"`
+	Clusters    []struct {
+		Name   string   `json:"name"`
+		Queues []string `json:"queues"`
+	} `json:"clusters"`
+}
+
+func runMultiClusterInfoHandler(t *testing.T, p Plugin, requestID uint64) multiClusterInfoResult {
+	t.Helper()
+	data := fmt.Sprintf(`{"messageType":17,"requestId":%d,"requestUsername":"admin","username":"testuser"}`, requestID)
+	req, err := protocol.RequestFromJSON([]byte(data))
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+
+	handler := createHandler(context.Background(), slog.Default(), p, 0, time.Now())
+	ch := make(chan interface{}, 1)
+	handler(req, ch)
+
+	if len(ch) == 0 {
+		t.Fatal("expected a response on the channel")
+	}
+
+	out, err := json.Marshal(<-ch)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var result multiClusterInfoResult
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	return result
+}
+
+func TestMultiClusterInfo_Implemented(t *testing.T) {
+	p := &multiClusterPlugin{}
+	result := runMultiClusterInfoHandler(t, p, 11)
+
+	if result.MessageType != 17 {
+		t.Errorf("messageType = %d, want 17", result.MessageType)
+	}
+	if result.RequestID != 11 {
+		t.Errorf("requestId = %d, want 11", result.RequestID)
+	}
+	if p.user != "testuser" {
+		t.Errorf("GetClusters user = %q, want %q", p.user, "testuser")
+	}
+	if len(result.Clusters) != 2 {
+		t.Fatalf("got %d clusters, want 2", len(result.Clusters))
+	}
+	if result.Clusters[0].Name != "Local" || result.Clusters[1].Name != "Kubernetes" {
+		t.Errorf("cluster names = %q, %q, want Local, Kubernetes",
+			result.Clusters[0].Name, result.Clusters[1].Name)
+	}
+	if len(result.Clusters[1].Queues) != 1 || result.Clusters[1].Queues[0] != "default" {
+		t.Errorf("clusters[1].queues = %v, want [default]", result.Clusters[1].Queues)
+	}
+}
+
+func TestMultiClusterInfo_FallsBackToClusterInfo(t *testing.T) {
+	result := runMultiClusterInfoHandler(t, singleClusterPlugin{}, 12)
+
+	if result.MessageType != 8 {
+		t.Errorf("messageType = %d, want 8 (cluster info response)", result.MessageType)
+	}
+	if result.RequestID != 12 {
+		t.Errorf("requestId = %d, want 12", result.RequestID)
+	}
+	if result.Name != "Local" {
+		t.Errorf("name = %q, want %q", result.Name, "Local")
+	}
+}

@@ -31,6 +31,108 @@ func TestRequestFromJSON_ConfigReload(t *testing.T) {
 	}
 }
 
+func TestRequestFromJSON_MultiClusterInfo(t *testing.T) {
+	input := `{"messageType": 17, "requestId": 7, "requestUsername": "admin", "username": "testuser"}`
+
+	req, err := RequestFromJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("RequestFromJSON() error = %v", err)
+	}
+
+	mc, ok := req.(*MultiClusterInfoRequest)
+	if !ok {
+		t.Fatalf("expected *MultiClusterInfoRequest, got %T", req)
+	}
+
+	if mc.ID() != 7 {
+		t.Errorf("ID() = %d, want 7", mc.ID())
+	}
+	if mc.Username != "testuser" {
+		t.Errorf("Username = %q, want %q", mc.Username, "testuser")
+	}
+}
+
+func marshalToMap(t *testing.T, v interface{}) map[string]interface{} {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	return got
+}
+
+func TestNewMultiClusterInfoResponse(t *testing.T) {
+	t.Run("clusters keep their names and order", func(t *testing.T) {
+		resp := NewMultiClusterInfoResponse(7, 3, []ClusterInfo{
+			{Name: "Local"},
+			{Name: "Kubernetes", Queues: []string{"default"}},
+		})
+		got := marshalToMap(t, resp)
+
+		if mt := int(got["messageType"].(float64)); mt != 17 {
+			t.Errorf("messageType = %d, want 17", mt)
+		}
+		if rid := uint64(got["requestId"].(float64)); rid != 7 {
+			t.Errorf("requestId = %d, want 7", rid)
+		}
+		if resID := uint64(got["responseId"].(float64)); resID != 3 {
+			t.Errorf("responseId = %d, want 3", resID)
+		}
+		clusters, ok := got["clusters"].([]interface{})
+		if !ok || len(clusters) != 2 {
+			t.Fatalf("clusters = %v, want 2 entries", got["clusters"])
+		}
+		for i, want := range []string{"Local", "Kubernetes"} {
+			c := clusters[i].(map[string]interface{})
+			if name := c["name"]; name != want {
+				t.Errorf("clusters[%d].name = %v, want %q", i, name, want)
+			}
+		}
+	})
+
+	t.Run("nil clusters encode as an empty array", func(t *testing.T) {
+		got := marshalToMap(t, NewMultiClusterInfoResponse(7, 3, nil))
+
+		clusters, ok := got["clusters"].([]interface{})
+		if !ok || len(clusters) != 0 {
+			t.Errorf("clusters = %v, want []", got["clusters"])
+		}
+	})
+
+	t.Run("nil cluster slices encode as empty arrays", func(t *testing.T) {
+		got := marshalToMap(t, NewMultiClusterInfoResponse(7, 3, []ClusterInfo{{Name: "Local"}}))
+
+		c := got["clusters"].([]interface{})[0].(map[string]interface{})
+		for _, key := range []string{"config", "placementConstraints", "resourceLimits", "resourceProfiles"} {
+			if v, ok := c[key].([]interface{}); !ok || len(v) != 0 {
+				t.Errorf("%s = %v, want []", key, c[key])
+			}
+		}
+	})
+}
+
+func TestNewClusterInfoResponse_Name(t *testing.T) {
+	t.Run("name present when set", func(t *testing.T) {
+		got := marshalToMap(t, NewClusterInfoResponse(1, 2, ClusterInfo{Name: "Local"}))
+
+		if name := got["name"]; name != "Local" {
+			t.Errorf("name = %v, want %q", name, "Local")
+		}
+	})
+
+	t.Run("name omitted when empty", func(t *testing.T) {
+		got := marshalToMap(t, NewClusterInfoResponse(1, 2, ClusterInfo{}))
+
+		if _, ok := got["name"]; ok {
+			t.Error("name should be omitted when empty")
+		}
+	})
+}
+
 func TestNewConfigReloadResponse_Success(t *testing.T) {
 	resp := NewConfigReloadResponse(42, 7, api.ReloadErrorNone, "")
 
