@@ -18,6 +18,8 @@ import (
 
 	"github.com/posit-dev/launcher-go-sdk/api"
 	"github.com/posit-dev/launcher-go-sdk/internal/protocol"
+	"github.com/posit-dev/launcher-go-sdk/internal/reloaddispatch"
+	"github.com/posit-dev/launcher-go-sdk/settings"
 )
 
 // Options represents configuration options for a plugin.
@@ -79,7 +81,18 @@ type DefaultOptions struct {
 	// to the Launcher. When zero, metrics collection is disabled.
 	MetricsInterval time.Duration
 
-	jobExpiryHours         uint
+	// JobExpiryHours is the parsed --job-expiry-hours value, in hours (the
+	// same unit JobExpiry is derived from). It is exported (unlike
+	// heartbeatSeconds/metricsIntervalSeconds below) because a plugin
+	// implementing [SettingsReloadablePlugin] needs it verbatim to seed
+	// [settings.NewReloader]'s seedJobExpiryHours parameter faithfully;
+	// reconstructing it from JobExpiry.Hours() is lossy above roughly
+	// 2,562,047 hours (int64 time.Duration overflow) and is otherwise just
+	// an unnecessary round trip through a derived value. Prefer
+	// [DefaultOptions.InheritedSettings] over reading this field directly
+	// when seeding a Reloader.
+	JobExpiryHours float64
+
 	heartbeatSeconds       uint
 	metricsIntervalSeconds uint
 	threadPoolSize         uint64
@@ -103,7 +116,7 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 			o.Debug = b
 			return nil
 		})
-	f.UintVar(&o.jobExpiryHours, "job-expiry-hours", uint(24),
+	f.Float64Var(&o.JobExpiryHours, "job-expiry-hours", 24,
 		"amount of hours before completed jobs are removed from the system")
 	// Set by Launcher but not used by any (known) plugin. If the upstream
 	// Launcher service became unresponsive and stopped sending heartbeats,
@@ -135,10 +148,56 @@ func (o *DefaultOptions) AddFlags(f *flag.FlagSet, pluginName string) {
 
 // Validate implements Options.
 func (o *DefaultOptions) Validate() error {
-	o.JobExpiry = time.Hour * time.Duration(o.jobExpiryHours)                 //nolint:gosec // CLI flag values are small integers
+	// Matches the C++ plugin base's startup check (OptionsBase.cpp,
+	// "ensure job expiry hours are positive") and settings.Reloader.Reload's
+	// identical rejection of a negative job-expiry-hours. Without this,
+	// startup would silently accept a value that a later reload of the
+	// same, unchanged configuration would reject - startup and reload must
+	// agree on identical input, which is the fixpoint property the
+	// dual-homed settings design depends on.
+	if o.JobExpiryHours < 0 {
+		return errors.New("job-expiry-hours must be a positive number")
+	}
+	o.JobExpiry = time.Duration(float64(time.Hour) * o.JobExpiryHours)
 	o.HeartbeatInterval = time.Second * time.Duration(o.heartbeatSeconds)     //nolint:gosec // CLI flag values are small integers
 	o.MetricsInterval = time.Second * time.Duration(o.metricsIntervalSeconds) //nolint:gosec // CLI flag values are small integers
 	return nil
+}
+
+// InheritedSettings builds an [api.InheritedSettings] from o's parsed
+// values, for seeding a [settings.Reloader] via [settings.NewReloader]'s
+// seedInherited parameter so the Reloader's startup baseline genuinely
+// matches what this plugin instance was started with. Call it after
+// Validate (typically right after [LoadOptions]/[MustLoadOptions] returns).
+//
+// includePluginMetricsIntervalSeconds sets the returned value's
+// IncludePluginMetricsIntervalSeconds field verbatim - the caller must
+// supply it explicitly because a plugin cannot derive it from its own
+// flags. The Launcher decides this per cluster type (some cluster types do
+// not support plugin metrics collection) and never passes it to the plugin
+// on the command line, so it is not one of DefaultOptions' parsed fields.
+// Guessing wrong here does not fail anything visibly: it produces a
+// plugin-metrics-interval-seconds baseline the plugin's own
+// plugin-metrics-interval-seconds resolve can never match (the field is
+// omitted from every [api.InheritedSettings] push when false, see
+// [settings.RawByKey]), so every single reload reports
+// plugin-metrics-interval-seconds as permanently pending-restart even
+// though nothing actually changed. Set it to whatever value this plugin's
+// own SubmitJob/ClusterInfo implementation already uses to decide whether
+// it participates in plugin-metrics-interval-seconds at all - if unsure,
+// confirm against the Launcher's cluster-type-specific behavior rather
+// than guessing true or false.
+func (o *DefaultOptions) InheritedSettings(includePluginMetricsIntervalSeconds bool) api.InheritedSettings {
+	return api.InheritedSettings{
+		ServerUser:                          o.ServerUser,
+		EnableDebugLogging:                  o.Debug,
+		ScratchPath:                         o.ScratchPath,
+		LoggingDir:                          o.LoggingDir,
+		HeartbeatIntervalSeconds:            o.heartbeatSeconds,
+		JobExpiryHours:                      o.JobExpiryHours,
+		PluginMetricsIntervalSeconds:        o.metricsIntervalSeconds,
+		IncludePluginMetricsIntervalSeconds: includePluginMetricsIntervalSeconds,
+	}
 }
 
 // LoadOptions loads options from command-line flags.
@@ -240,11 +299,25 @@ type LoadBalancedPlugin interface {
 // configuration reloading. When the Launcher sends a config reload request,
 // ReloadConfig will be called and the SDK writes the response automatically
 // based on the returned error. Plugins that do not implement this interface
-// will send an empty success response automatically.
+// (nor [SettingsReloadablePlugin]) are reported to the Launcher as not
+// supporting config reload at all ([api.ReloadErrorRequestNotSupported]) —
+// the SDK never claims a reload happened when the plugin has no way to
+// perform one.
 //
 // At minimum, plugins should reload user profiles and resource profiles.
 // Reloading additional configuration (e.g., the main plugin configuration
 // file) is permitted but not required.
+//
+// Plugins that also want the SDK to resolve and apply the Launcher's
+// dual-homed [server] settings (job-expiry-hours, logging-dir,
+// enable-debug-logging, etc.) and report applied/pendingRestart back to the
+// Launcher should ALSO implement [SettingsReloadablePlugin] (this interface
+// and that one are additive, not alternatives - see that type's doc comment
+// for the combined-implementation contract). ReloadConfig here remains the
+// right place for plugin-specific reload work (profiles, etc.); the
+// returned Reloader's ApplyExtra hook is an alternative for the same kind of
+// work if a plugin prefers not to implement ReloadConfig at all, not a
+// requirement to move it there.
 type ConfigReloadablePlugin interface {
 	Plugin
 
@@ -253,6 +326,39 @@ type ConfigReloadablePlugin interface {
 	// provide a classified error type, or any other error for an
 	// unclassified failure.
 	ReloadConfig(ctx context.Context) error
+}
+
+// SettingsReloadablePlugin can be implemented by plugins that want the SDK
+// to resolve, apply, and report the Launcher's dual-homed [server] settings
+// (see package settings) automatically on every config reload. When a
+// plugin implements this interface, the SDK calls SettingsReloader().Reload
+// with the incoming request's InheritedSettings, and populates the
+// response's applied/pendingRestart/generation fields from the result.
+//
+// This interface and [ConfigReloadablePlugin] are ADDITIVE: a plugin may
+// implement either one alone, or both together, and both are honored. When
+// both are implemented, the SDK runs the settings reload first and then
+// (only if that succeeded) calls ReloadConfig too - neither interface
+// silently disables the other, so an existing ConfigReloadablePlugin that
+// later also adopts SettingsReloadablePlugin does not lose its ReloadConfig
+// behavior. If the settings reload itself fails (e.g. a validation error),
+// ReloadConfig is not called and the failure is reported as-is; if the
+// settings reload succeeds but the subsequent ReloadConfig call fails, the
+// response reports ReloadConfig's classified error (never success) while
+// still including the settings reload's genuine applied/pendingRestart
+// lists - the Launcher is never told a reload fully succeeded when half of
+// it did not.
+//
+// Plugin-specific reload work (profiles, etc.) can go in
+// [settings.Reloader.ApplyExtra], in ReloadConfig, or split between the
+// two, at the plugin author's discretion - both extension points run.
+type SettingsReloadablePlugin interface {
+	Plugin
+
+	// SettingsReloader returns the plugin's *settings.Reloader, constructed
+	// once (e.g. at startup, from the plugin's own DefaultOptions and an
+	// [settings.OwnConfSource]) and reused across every reload.
+	SettingsReloader() *settings.Reloader
 }
 
 // MetricsPlugin can be implemented by plugins that want to report custom
@@ -276,17 +382,15 @@ type MetricsPlugin interface {
 // [ConfigReloadablePlugin.ReloadConfig] to provide both an error type and
 // message. If a plain error is returned, the error type defaults to
 // [api.ReloadErrorUnknown].
-type ConfigReloadError struct {
-	Type    api.ConfigReloadErrorType
-	Message string
-}
-
-func (e *ConfigReloadError) Error() string {
-	if e.Message != "" {
-		return e.Message
-	}
-	return fmt.Sprintf("config reload failed: %s", e.Type)
-}
+//
+// This is a type alias to [reloaddispatch.ConfigReloadError]: the real
+// definition lives in that internal package (shared by this package's own
+// dispatch and by the conformance package's reload conformance area, see
+// conformance.RunReload) so it can be referenced from both sides of that
+// shared logic without an import cycle. The alias keeps the identifier
+// plugin authors use, `launcher.ConfigReloadError`, unchanged - this is
+// purely an internal reorganization, not an API change.
+type ConfigReloadError = reloaddispatch.ConfigReloadError
 
 // ResponseWriter is the interface for writing responses back to the Launcher.
 // Methods return error to allow implementations flexibility in error reporting
@@ -534,25 +638,9 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 			w.WriteSetLoadBalancerNodes()
 		case *protocol.ConfigReloadRequest:
 			w = newResponseWriter(req, ch)
-			crPlugin, ok := p.(ConfigReloadablePlugin)
-			if !ok {
-				//nolint:errcheck // sendResponse currently always returns nil
-				w.WriteConfigReload(api.ReloadErrorNone, "")
-				return
-			}
-			if err := crPlugin.ReloadConfig(ctx); err != nil {
-				var crErr *ConfigReloadError
-				if errors.As(err, &crErr) {
-					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(crErr.Type, crErr.Message)
-				} else {
-					//nolint:errcheck // sendResponse currently always returns nil
-					w.WriteConfigReload(api.ReloadErrorUnknown, err.Error())
-				}
-				return
-			}
+			errType, errMsg, applied, pendingRestart, generation := reloaddispatch.Handle(ctx, p, r.InheritedSettings, r.Generation)
 			//nolint:errcheck // sendResponse currently always returns nil
-			w.WriteConfigReload(api.ReloadErrorNone, "")
+			w.WriteConfigReload(errType, errMsg, applied, pendingRestart, generation)
 		default:
 			w = newResponseWriter(req, ch)
 			//nolint:errcheck // sendResponse currently always returns nil
@@ -720,8 +808,20 @@ func (w *defaultResponseWriter) WriteSetLoadBalancerNodes() error {
 	return w.sendResponse(resp)
 }
 
-func (w *defaultResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string) error {
+// WriteConfigReload sends a config reload response. applied and
+// pendingRestart are coerced to non-nil (empty when nil) so the wire
+// response always carries `"applied": []`/`"pendingRestart": []` rather than
+// `null`, matching the C++ Launcher's ConfigReloadResponse::toJson(), which
+// always emits both keys.
+func (w *defaultResponseWriter) WriteConfigReload(errorType api.ConfigReloadErrorType, errorMessage string, applied, pendingRestart []string, generation uint) error {
 	resp := protocol.NewConfigReloadResponse(w.req.ID(), nextResponseID(), errorType, errorMessage)
+	if applied != nil {
+		resp.Applied = applied
+	}
+	if pendingRestart != nil {
+		resp.PendingRestart = pendingRestart
+	}
+	resp.Generation = generation
 	return w.sendResponse(resp)
 }
 

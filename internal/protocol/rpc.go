@@ -207,6 +207,18 @@ type SetLoadBalancerNodesRequest struct {
 // ConfigReloadRequest is the config reload request.
 type ConfigReloadRequest struct {
 	BaseUserRequest
+
+	// InheritedSettings carries the Launcher's dual-homed [server] settings,
+	// when the Launcher has pushed them down as part of this reload. It is
+	// nil when the Launcher omits the field entirely (i.e. it has nothing to
+	// push down this time) — callers must not treat a nil value as "reset
+	// everything to zero/default".
+	InheritedSettings *api.InheritedSettings `json:"inheritedSettings,omitempty"`
+
+	// Generation is the Launcher's monotonically increasing config
+	// generation stamp for this reload. It defaults to 0 when the Launcher
+	// omits the field.
+	Generation uint `json:"generation,omitempty"`
 }
 
 type responseType int
@@ -436,12 +448,39 @@ type ConfigReloadResponse struct {
 	responseBase
 	ErrorType    api.ConfigReloadErrorType `json:"errorType"`
 	ErrorMessage string                    `json:"errorMessage"`
+
+	// Applied lists the names of inherited settings the plugin actually
+	// applied as part of this reload. Always present on the wire (as `[]`
+	// when nothing was applied), matching the C++ Launcher's
+	// ConfigReloadResponse::toJson(), which always emits this key rather
+	// than omitting it when empty.
+	Applied []string `json:"applied"`
+
+	// PendingRestart lists the names of inherited settings that changed but
+	// require a plugin restart to take effect. Always present on the wire,
+	// for the same reason as Applied.
+	PendingRestart []string `json:"pendingRestart"`
+
+	// Generation echoes back the Launcher's config generation stamp that
+	// this response corresponds to. Always present on the wire (0 is a
+	// meaningful "no generation tracked yet" value, not an absent one),
+	// matching the C++ Launcher.
+	Generation uint `json:"generation"`
 }
 
-// NewConfigReloadResponse creates a new config reload response.
+// NewConfigReloadResponse creates a new config reload response. Applied and
+// PendingRestart are initialized to empty (non-nil) slices so a response
+// that never sets them still serializes as `[]`, never `null`; callers that
+// do have entries to report should overwrite these fields directly.
 func NewConfigReloadResponse(requestID, responseID uint64, errorType api.ConfigReloadErrorType, errorMessage string) *ConfigReloadResponse {
 	base := responseBase{responseConfigReload, requestID, responseID}
-	return &ConfigReloadResponse{responseBase: base, ErrorType: errorType, ErrorMessage: errorMessage}
+	return &ConfigReloadResponse{
+		responseBase:   base,
+		ErrorType:      errorType,
+		ErrorMessage:   errorMessage,
+		Applied:        []string{},
+		PendingRestart: []string{},
+	}
 }
 
 // HistogramSample is a portable snapshot of a Prometheus histogram's data,
