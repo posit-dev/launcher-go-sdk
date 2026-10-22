@@ -67,7 +67,7 @@ type stubPlugin struct{}
 func (stubPlugin) SubmitJob(context.Context, ResponseWriter, string, *api.Job)               {}
 func (stubPlugin) GetJob(context.Context, ResponseWriter, string, api.JobID, []string)       {}
 func (stubPlugin) GetJobs(context.Context, ResponseWriter, string, *api.JobFilter, []string) {}
-func (stubPlugin) ControlJob(context.Context, ResponseWriter, string, api.JobID, api.JobOperation) {
+func (stubPlugin) ControlJob(context.Context, ResponseWriter, string, api.JobID, api.JobOperation, api.ControlJobOptions) {
 }
 func (stubPlugin) GetJobStatus(context.Context, StreamResponseWriter, string, api.JobID) {}
 func (stubPlugin) GetJobStatuses(context.Context, StreamResponseWriter, string)          {}
@@ -202,5 +202,63 @@ func TestConfigReload_WrappedConfigReloadError(t *testing.T) {
 	}
 	if result.ErrorMessage != "config file syntax error" {
 		t.Errorf("errorMessage = %q, want %q", result.ErrorMessage, "config file syntax error")
+	}
+}
+
+// controlRecordingPlugin records the arguments of the last ControlJob call.
+type controlRecordingPlugin struct {
+	stubPlugin
+	called bool
+	id     api.JobID
+	op     api.JobOperation
+	opts   api.ControlJobOptions
+}
+
+func (p *controlRecordingPlugin) ControlJob(_ context.Context, _ ResponseWriter, _ string, id api.JobID, op api.JobOperation, opts api.ControlJobOptions) {
+	p.called = true
+	p.id = id
+	p.op = op
+	p.opts = opts
+}
+
+func TestControlJob_PassesKillReason(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantOp   api.JobOperation
+		wantOpts api.ControlJobOptions
+	}{
+		{
+			name:     "kill with reason",
+			input:    `{"messageType":5,"requestId":9,"requestUsername":"admin","username":"alice","jobId":"job-1","operation":3,"statusMessage":"Out of memory","statusCode":"OOM"}`,
+			wantOp:   api.OperationKill,
+			wantOpts: api.ControlJobOptions{StatusMessage: "Out of memory", StatusCode: "OOM"},
+		},
+		{
+			name:   "kill without reason",
+			input:  `{"messageType":5,"requestId":9,"requestUsername":"admin","username":"alice","jobId":"job-1","operation":3}`,
+			wantOp: api.OperationKill,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := protocol.RequestFromJSON([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("RequestFromJSON() error = %v", err)
+			}
+			p := &controlRecordingPlugin{}
+			handler := createHandler(context.Background(), slog.Default(), p, 0, time.Now())
+			handler(req, make(chan interface{}, 1))
+
+			if !p.called {
+				t.Fatal("ControlJob was not called")
+			}
+			if p.id != "job-1" || p.op != tt.wantOp {
+				t.Errorf("ControlJob(id=%q, op=%v), want (id=%q, op=%v)", p.id, p.op, "job-1", tt.wantOp)
+			}
+			if p.opts != tt.wantOpts {
+				t.Errorf("ControlJob opts = %+v, want %+v", p.opts, tt.wantOpts)
+			}
+		})
 	}
 }
