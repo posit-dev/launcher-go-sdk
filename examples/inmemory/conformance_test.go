@@ -11,6 +11,9 @@ import (
 	"github.com/posit-dev/launcher-go-sdk/conformance"
 )
 
+// testUser is the username that the conformance tests submit jobs as.
+const testUser = "testuser"
+
 func newTestPlugin(t *testing.T) *InMemoryPlugin {
 	t.Helper()
 	lgr := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -60,25 +63,21 @@ func testProfile() conformance.Profile {
 // Tier 1: Universal invariants.
 func TestRun(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.Run(t, p, "testuser", testProfile())
+	conformance.Run(t, p, testUser, testProfile())
 }
 
 // Tier 2: Product workflows.
 func TestRunWorkflows(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunWorkflows(t, p, "testuser", testProfile())
+	conformance.RunWorkflows(t, p, testUser, testProfile())
 }
 
 // Tier 3: Individual scenarios.
 
 func TestRunStopJob(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunStopJob(t, p, "testuser", conformance.StopOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "sleep 300",
-			Tags:    []string{"long-running"},
-		},
+	conformance.RunStopJob(t, p, testUser, conformance.StopOpts{
+		Job:             testProfile().LongRunningJob(testUser),
 		ExpectStatus:    api.StatusFinished,
 		ExpectExitCodes: []int{143},
 		Timeout:         5 * time.Second,
@@ -87,12 +86,8 @@ func TestRunStopJob(t *testing.T) {
 
 func TestRunKillJob(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunKillJob(t, p, "testuser", conformance.KillOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "sleep 300",
-			Tags:    []string{"long-running"},
-		},
+	conformance.RunKillJob(t, p, testUser, conformance.KillOpts{
+		Job:             testProfile().LongRunningJob(testUser),
 		ExpectStatus:    api.StatusKilled,
 		ExpectExitCodes: []int{137},
 		Timeout:         5 * time.Second,
@@ -101,23 +96,16 @@ func TestRunKillJob(t *testing.T) {
 
 func TestRunCancelJob(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunCancelJob(t, p, "testuser", conformance.CancelOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "sleep 300",
-			Tags:    []string{"long-running"},
-		},
+	conformance.RunCancelJob(t, p, testUser, conformance.CancelOpts{
+		Job:     testProfile().LongRunningJob(testUser),
 		Timeout: 5 * time.Second,
 	})
 }
 
 func TestRunOutputStream(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunOutputStream(t, p, "testuser", conformance.OutputStreamOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "echo hello",
-		},
+	conformance.RunOutputStream(t, p, testUser, conformance.OutputStreamOpts{
+		Job:            testProfile().JobFactory(testUser),
 		OutputType:     api.OutputStdout,
 		ExpectNonEmpty: true,
 		Timeout:        5 * time.Second,
@@ -126,45 +114,32 @@ func TestRunOutputStream(t *testing.T) {
 
 func TestRunStatusStream(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunStatusStream(t, p, "testuser", conformance.StatusStreamOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "echo hello",
-		},
+	conformance.RunStatusStream(t, p, testUser, conformance.StatusStreamOpts{
+		Job:     testProfile().JobFactory(testUser),
 		Timeout: 5 * time.Second,
 	})
 }
 
 func TestRunStreamCancellation(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunStreamCancellation(t, p, "testuser", conformance.StreamCancelOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "echo hello",
-		},
+	conformance.RunStreamCancellation(t, p, testUser, conformance.StreamCancelOpts{
+		Job:     testProfile().JobFactory(testUser),
 		Timeout: 5 * time.Second,
 	})
 }
 
 func TestRunFieldFiltering(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunFieldFiltering(t, p, "testuser", conformance.FieldFilterOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Name:    "field-filter-test",
-			Command: "echo hello",
-		},
+	conformance.RunFieldFiltering(t, p, testUser, conformance.FieldFilterOpts{
+		Job:    testProfile().JobFactory(testUser),
 		Fields: []string{"status", "name"},
 	})
 }
 
 func TestRunControlInvalidState(t *testing.T) {
 	p := newTestPlugin(t)
-	conformance.RunControlInvalidState(t, p, "testuser", conformance.InvalidStateOpts{
-		Job: &api.Job{
-			User:    "testuser",
-			Command: "echo hello",
-		},
+	conformance.RunControlInvalidState(t, p, testUser, conformance.InvalidStateOpts{
+		Job:       testProfile().JobFactory(testUser),
 		Operation: api.OperationStop,
 		Timeout:   10 * time.Second,
 	})

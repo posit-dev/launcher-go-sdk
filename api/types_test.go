@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// testUser is the job owner in tests that need a username.
+const testUser = "alice"
+
+// newJob returns a job with the given ID and status that belongs to user.
+func newJob(id JobID, user, status string) *Job {
+	return &Job{ID: id, User: user, Status: status}
+}
+
 func TestTerminalStatus(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -367,20 +375,16 @@ func TestNode_Online(t *testing.T) {
 
 func TestJob_StructFields(t *testing.T) {
 	// Test that Job struct has expected fields by creating an instance
-	job := &Job{
-		ID:        "test-123",
-		User:      "alice",
-		Status:    StatusPending,
-		Name:      "test-job",
-		SystemJob: true,
-	}
+	job := newJob("test-123", testUser, StatusPending)
+	job.Name = "test-job"
+	job.SystemJob = true
 
 	if job.ID != "test-123" {
 		t.Errorf("Job.ID = %q, want %q", job.ID, "test-123")
 	}
 
-	if job.User != "alice" {
-		t.Errorf("Job.User = %q, want %q", job.User, "alice")
+	if job.User != testUser {
+		t.Errorf("Job.User = %q, want %q", job.User, testUser)
 	}
 
 	if job.Status != StatusPending {
@@ -471,15 +475,11 @@ func TestJobFilter_StructFields(t *testing.T) {
 func TestJob_WithFields(t *testing.T) {
 	now := time.Now().UTC()
 	pid := 4321
-	job := &Job{
-		ID:        "job-1",
-		User:      "alice",
-		Status:    StatusRunning,
-		Pid:       &pid,
-		Submitted: &now,
-		Tags:      []string{"s12345678904321", "rstudio-r-session-id:s12345678904321"},
-		Env:       []Env{{Name: "FOO", Value: "bar"}},
-	}
+	job := newJob("job-1", testUser, StatusRunning)
+	job.Pid = &pid
+	job.Submitted = &now
+	job.Tags = []string{"s12345678904321", "rstudio-r-session-id:s12345678904321"}
+	job.Env = []Env{{Name: "FOO", Value: "bar"}}
 
 	t.Run("empty fields returns original", func(t *testing.T) {
 		if got := job.WithFields(nil); got != job {
