@@ -382,7 +382,7 @@ func (p *MyPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user
         case api.OperationKill:
             killJob(job.ID)  // Send SIGKILL
             job.Status = api.StatusKilled
-            // Record why the job was killed, if the caller said
+            // Record the caller-supplied kill reason, if any
             job.StatusMsg = opts.StatusMessage
             job.StatusCode = opts.StatusCode
         case api.OperationCancel:
