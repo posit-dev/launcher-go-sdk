@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - 2026-10-23
 
 ### Added
-- **Plugin API 3.10.0**: Job control requests carry an optional Kill reason. `ControlJobRequest` gains `StatusMessage` and `StatusCode` (`"statusMessage"`/`"statusCode"` on the wire, omitted when empty), which plugins receive as the new `api.ControlJobOptions` argument to `ControlJob` ([#60](https://github.com/posit-dev/launcher-go-sdk/issues/60)). The Launcher only sends them with `OperationKill`. The in-memory example records them on the killed job.
+- **Plugin API 3.10.0**: Job control requests carry an optional Kill reason. `ControlJobRequest` gains `StatusMessage` and `StatusCode` (`"statusMessage"`/`"statusCode"` on the wire). Plugins receive them as the new `api.ControlJobOptions` argument to `ControlJob` ([#60](https://github.com/posit-dev/launcher-go-sdk/issues/60)). The Launcher only sends them with `OperationKill`, and leaves each out when empty. The in-memory example records them on the killed job.
 - **Plugin API 3.9.0**: `Job` gains an optional `SystemJob` field (`"systemJob"` on the wire). Marks a system/utility job that bypasses resource-profile enforcement; only honored on privileged requests.
 - **Plugin API 3.8.0**: `PlacementConstraint` gains an optional `Default` field (`"defaultValue"` on the wire). The Launcher uses this to surface a pre-fill hint for constraint inputs in Workbench.
 
