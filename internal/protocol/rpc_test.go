@@ -233,3 +233,66 @@ func TestNewConfigReloadResponse_ErrorTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestFromJSON_ControlJob(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantOp      api.JobOperation
+		wantMessage string
+		wantCode    string
+	}{
+		{
+			name:        "kill with reason",
+			input:       `{"messageType": 5, "requestId": 7, "requestUsername": "admin", "username": "alice", "jobId": "job-1", "encodedJobId": "enc-1", "operation": 3, "statusMessage": "Out of memory", "statusCode": "OOM"}`,
+			wantOp:      api.OperationKill,
+			wantMessage: "Out of memory",
+			wantCode:    "OOM",
+		},
+		{
+			name:   "fields omitted",
+			input:  `{"messageType": 5, "requestId": 7, "requestUsername": "admin", "username": "alice", "jobId": "job-1", "encodedJobId": "enc-1", "operation": 2}`,
+			wantOp: api.OperationStop,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := RequestFromJSON([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("RequestFromJSON() error = %v", err)
+			}
+			cr, ok := req.(*ControlJobRequest)
+			if !ok {
+				t.Fatalf("expected *ControlJobRequest, got %T", req)
+			}
+			if cr.JobID != "job-1" {
+				t.Errorf("JobID = %q, want %q", cr.JobID, "job-1")
+			}
+			if cr.Operation != tt.wantOp {
+				t.Errorf("Operation = %v, want %v", cr.Operation, tt.wantOp)
+			}
+			if cr.StatusMessage != tt.wantMessage {
+				t.Errorf("StatusMessage = %q, want %q", cr.StatusMessage, tt.wantMessage)
+			}
+			if cr.StatusCode != tt.wantCode {
+				t.Errorf("StatusCode = %q, want %q", cr.StatusCode, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestControlJobRequest_OmitsEmptyReason(t *testing.T) {
+	data, err := json.Marshal(&ControlJobRequest{Operation: api.OperationKill})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	for _, key := range []string{"statusMessage", "statusCode"} {
+		if _, ok := fields[key]; ok {
+			t.Errorf("marshaled request contains %q, want it omitted when empty", key)
+		}
+	}
+}

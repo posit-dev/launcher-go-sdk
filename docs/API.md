@@ -113,7 +113,7 @@ type Plugin interface {
     SubmitJob(w ResponseWriter, user string, job *api.Job)
     GetJob(w ResponseWriter, user string, id api.JobID, fields []string)
     GetJobs(w ResponseWriter, user string, filter *api.JobFilter, fields []string)
-    ControlJob(w ResponseWriter, user string, id api.JobID, op api.JobOperation)
+    ControlJob(w ResponseWriter, user string, id api.JobID, op api.JobOperation, opts api.ControlJobOptions)
     GetJobStatus(ctx context.Context, w StreamResponseWriter, user string, id api.JobID)
     GetJobStatuses(ctx context.Context, w StreamResponseWriter, user string)
     GetJobOutput(ctx context.Context, w StreamResponseWriter, user string, id api.JobID, outputType api.JobOutput)
@@ -174,7 +174,7 @@ Returns information about multiple jobs matching a filter.
 #### Method: ControlJob
 
 ```go
-ControlJob(w ResponseWriter, user string, id api.JobID, op api.JobOperation)
+ControlJob(w ResponseWriter, user string, id api.JobID, op api.JobOperation, opts api.ControlJobOptions)
 ```
 
 Performs a control operation on a job (stop, kill, cancel, suspend, resume).
@@ -184,6 +184,7 @@ Performs a control operation on a job (stop, kill, cancel, suspend, resume).
 - `user` - Username performing the operation
 - `id` - Job identifier
 - `op` - Operation to perform (see [api.JobOperation](#type-joboperation))
+- `opts` - Optional caller-supplied details (see [api.ControlJobOptions](#type-controljoboptions)). The Launcher only sets the kill reason with `OperationKill`
 
 #### Method: GetJobStatus
 
@@ -595,7 +596,7 @@ Container image configuration.
 
 Import path: `github.com/posit-dev/launcher-go-sdk/api`
 
-The api package contains all type definitions matching the Launcher Plugin API v3.9.
+The api package contains all type definitions matching the Launcher Plugin API v3.10.
 
 ### Type: Job
 
@@ -740,6 +741,19 @@ Returns the job status this operation is valid for.
 - `stop` → `StatusRunning`
 - `suspend` → `StatusRunning`
 - `resume` → `StatusSuspended`
+
+### Type: ControlJobOptions
+
+```go
+type ControlJobOptions struct {
+    StatusMessage string
+    StatusCode    string
+}
+```
+
+Optional details sent with a `ControlJob` request. `StatusMessage` and `StatusCode` record why a job was killed, for example an operator kill versus an out-of-memory kill. The Launcher only sends them with `OperationKill` and limits each to 256 bytes. Both are empty when the caller doesn't give a reason.
+
+A plugin that records the reason sets them on the job's `StatusMsg` and `StatusCode` fields, so they appear in later status updates. Plugins that don't need the reason can ignore `opts`.
 
 ### Type: JobOutput
 

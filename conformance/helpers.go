@@ -92,7 +92,7 @@ func GetJobs(p launcher.Plugin, user string, filter *api.JobFilter) []*api.Job {
 // ControlJob calls p.ControlJob and returns the result and any error.
 func ControlJob(p launcher.Plugin, user string, id api.JobID, op api.JobOperation) (*plugintest.ControlResult, *api.Error) {
 	w := plugintest.NewMockResponseWriter()
-	p.ControlJob(context.Background(), w, user, id, op)
+	p.ControlJob(context.Background(), w, user, id, op, api.ControlJobOptions{})
 	if w.HasError() {
 		return nil, w.LastError()
 	}

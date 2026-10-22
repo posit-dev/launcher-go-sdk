@@ -458,7 +458,7 @@ func testErrorInvariants(t *testing.T, p launcher.Plugin, user string, _ *Profil
 
 	t.Run("ControlNonexistentReturnsError", func(t *testing.T) {
 		w := plugintest.NewMockResponseWriter()
-		p.ControlJob(context.Background(), w, user, "nonexistent-conformance-ctrl-99999", api.OperationStop)
+		p.ControlJob(context.Background(), w, user, "nonexistent-conformance-ctrl-99999", api.OperationStop, api.ControlJobOptions{})
 		plugintest.AssertError(t, w)
 	})
 }

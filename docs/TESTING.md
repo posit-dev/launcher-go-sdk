@@ -430,7 +430,7 @@ func TestControlJob_Kill(t *testing.T) {
 
     // Execute kill operation
     w := plugintest.NewMockResponseWriter()
-    plugin.ControlJob(context.Background(), w, "alice", "job-123", api.OperationKill)
+    plugin.ControlJob(context.Background(), w, "alice", "job-123", api.OperationKill, api.ControlJobOptions{})
 
     // Assert operation succeeded
     plugintest.AssertNoError(t, w)
@@ -465,7 +465,7 @@ func TestControlJob_InvalidState(t *testing.T) {
 
     // Try to kill a finished job (invalid)
     w := plugintest.NewMockResponseWriter()
-    plugin.ControlJob(context.Background(), w, "alice", "job-123", api.OperationKill)
+    plugin.ControlJob(context.Background(), w, "alice", "job-123", api.OperationKill, api.ControlJobOptions{})
 
     // Assert error
     plugintest.AssertErrorCode(t, w, api.CodeInvalidJobState)
@@ -727,7 +727,7 @@ func TestControlJob_Operations(t *testing.T) {
 
             // Execute
             w := plugintest.NewMockResponseWriter()
-            plugin.ControlJob(context.Background(), w, "alice", "job-123", tt.operation)
+            plugin.ControlJob(context.Background(), w, "alice", "job-123", tt.operation, api.ControlJobOptions{})
 
             // Assert
             if tt.expectError {
