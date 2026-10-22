@@ -776,15 +776,6 @@ Potential additions:
 
 All can be added via new interfaces without breaking existing plugins.
 
-### Multi-cluster improvements
-
-Current multi-cluster support is basic. Future improvements:
-
-1. **Cluster Health**: Monitor cluster availability
-2. **Failover**: Automatic cluster switching
-3. **Load Balancing**: Distribute jobs across clusters
-4. **Cluster Groups**: Logical grouping of clusters
-
 ### Observability
 
 Potential additions:
