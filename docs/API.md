@@ -752,7 +752,7 @@ type ControlJobOptions struct {
 }
 ```
 
-`StatusMessage` and `StatusCode` record why a job was killed, for example an operator kill versus an out-of-memory kill. The Launcher only sends them with `OperationKill`, already validated to at most 256 bytes each. To report them, save them on the job's `StatusMsg` and `StatusCode` fields. Plugins that don't need the reason can ignore `opts`.
+`StatusMessage` and `StatusCode` record why a job was killed, for example, an operator kill versus an out-of-memory kill. The Launcher only sends them with `OperationKill` and limits each to 256 bytes. To report them, save them on the job's `StatusMsg` and `StatusCode` fields. Plugins that don't need the reason can ignore `opts`.
 
 ### Type: JobOutput
 
