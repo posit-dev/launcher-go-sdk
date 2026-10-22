@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test matrix now runs against Go 1.25 and 1.26 (dropped 1.24, added 1.26).
 
 ### Fixed
+- `plugintest.MockResponseWriter.ClusterInfo()` now also copies each `ResourceProfile`'s `Constraints` slice. Before, the returned value shared that slice with the writer's stored state, so a caller's changes leaked into later `ClusterInfo()` calls.
 - Goroutine leak in `cache.JobCache` when the passed context was canceled without calling `Close()` ([#18](https://github.com/posit-dev/launcher-go-sdk/issues/18)); the context parameter has been removed
 
 ## [0.2.0] - 2026-05-27
