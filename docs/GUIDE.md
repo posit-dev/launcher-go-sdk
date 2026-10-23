@@ -952,27 +952,6 @@ Resource utilization streaming is a best-effort feature. Not all schedulers expo
 
 Report whichever metrics are available from your scheduler. Pass `0` for unavailable metrics.
 
-### Multi-cluster support
-
-Implement `MultiClusterPlugin` to support multiple clusters:
-
-```go
-func (p *MyPlugin) GetClusters(w launcher.MultiClusterResponseWriter, user string) {
-    clusters := []launcher.ClusterOptions{
-        {
-            Name:   "cpu-cluster",
-            Queues: []string{"batch", "interactive"},
-        },
-        {
-            Name:   "gpu-cluster",
-            Queues: []string{"gpu", "gpu-interactive"},
-        },
-    }
-
-    w.WriteClusters(clusters)
-}
-```
-
 ### Load balancer awareness
 
 When multiple Launcher instances are load balanced, each plugin instance must be able to return the same data. This typically means using the scheduler itself as the source of truth and populating each plugin's in-memory cache on startup.
