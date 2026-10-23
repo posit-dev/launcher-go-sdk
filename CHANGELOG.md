@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
 ### Added
 - **Plugin API 3.9.0**: `Job` gains an optional `SystemJob` field (`"systemJob"` on the wire). Marks a system/utility job that bypasses resource-profile enforcement; only honored on privileged requests.
 - **Plugin API 3.8.0**: `PlacementConstraint` gains an optional `Default` field (`"defaultValue"` on the wire). The Launcher uses this to surface a pre-fill hint for constraint inputs in Workbench.
@@ -20,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Goroutine leak in `cache.JobCache` when the passed context was canceled without calling `Close()` ([#18](https://github.com/posit-dev/launcher-go-sdk/issues/18)); the context parameter has been removed
+- Job output stream requests failed to decode because the Launcher sends `outputType` as an integer; `api.JobOutput` is now a plain integer on the wire. Its `MarshalText`/`UnmarshalText` methods are removed.
+- Field-projected `get_job`/`get_jobs` responses omitted environment variables when `environment` was requested.
 
 ## [0.2.0] - 2026-05-27
 
@@ -143,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This is a pre-1.0 release (v0.x). The API may change in minor version updates. We will document breaking changes with migration guides.
 
-[Unreleased]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/posit-dev/launcher-go-sdk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/posit-dev/launcher-go-sdk/releases/tag/v0.1.0
