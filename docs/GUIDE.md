@@ -364,7 +364,7 @@ func (p *MyPlugin) GetJobs(_ context.Context, w launcher.ResponseWriter, user st
 
 ```go
 func (p *MyPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string,
-    id api.JobID, op api.JobOperation) {
+    id api.JobID, op api.JobOperation, opts api.ControlJobOptions) {
 
     err := p.cache.Update(user, id, func(job *api.Job) *api.Job {
         // 1. Validate operation is valid for current status
@@ -382,6 +382,9 @@ func (p *MyPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user
         case api.OperationKill:
             killJob(job.ID)  // Send SIGKILL
             job.Status = api.StatusKilled
+            // Record the caller-supplied kill reason, if any
+            job.StatusMsg = opts.StatusMessage
+            job.StatusCode = opts.StatusCode
         case api.OperationCancel:
             cancelJob(job.ID)
             job.Status = api.StatusCanceled
@@ -1107,7 +1110,7 @@ func (p *MyPlugin) SubmitJob(ctx context.Context, w launcher.ResponseWriter, use
     // ... handle result ...
 }
 
-func (p *MyPlugin) ControlJob(ctx context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
+func (p *MyPlugin) ControlJob(ctx context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation, _ api.ControlJobOptions) {
     start := time.Now()
     err := runSchedulerCommand(ctx, string(op), id)
     p.latency.Observe(time.Since(start).Seconds())

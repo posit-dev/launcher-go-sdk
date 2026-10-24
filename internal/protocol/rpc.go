@@ -175,6 +175,9 @@ type JobStatusStreamRequest struct {
 type ControlJobRequest struct {
 	BaseJobRequest
 	Operation api.JobOperation `json:"operation"`
+	// See api.ControlJobOptions.
+	StatusMessage string `json:"statusMessage,omitempty"`
+	StatusCode    string `json:"statusCode,omitempty"`
 }
 
 // JobOutputRequest is the job output stream request.
