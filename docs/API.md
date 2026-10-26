@@ -66,7 +66,6 @@ Every response from the plugin includes:
 | 7 | Get Job Resource Util | Stream resource utilization metrics for a job. |
 | 8 | Get Job Network | Get network information (hostname, IPs) for a job. |
 | 9 | Get Cluster Info | Get cluster capabilities and configuration. |
-| 17 | Multi Cluster Info | Get capabilities for multiple clusters. |
 | 201 | Set Load Balancer Nodes | Update load-balanced node list. |
 | 202 | Config Reload | Request configuration reload. |
 | 203 | Metrics Response | Periodic plugin metrics (plugin-initiated, no request). |
