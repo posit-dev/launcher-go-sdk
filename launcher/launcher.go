@@ -199,7 +199,7 @@ type Plugin interface {
 
 	GetJobs(ctx context.Context, w ResponseWriter, user string, filter *api.JobFilter, fields []string)
 
-	ControlJob(ctx context.Context, w ResponseWriter, user string, id api.JobID, op api.JobOperation)
+	ControlJob(ctx context.Context, w ResponseWriter, user string, id api.JobID, op api.JobOperation, opts api.ControlJobOptions)
 
 	GetJobStatus(ctx context.Context, w StreamResponseWriter, user string, id api.JobID)
 
@@ -501,7 +501,10 @@ func createHandler(ctx context.Context, lgr *slog.Logger, p Plugin, metricsInter
 					r.Operation, r.JobID)
 				return
 			}
-			p.ControlJob(ctx, w, r.Username, r.JobID, r.Operation)
+			p.ControlJob(ctx, w, r.Username, r.JobID, r.Operation, api.ControlJobOptions{
+				StatusMessage: r.StatusMessage,
+				StatusCode:    r.StatusCode,
+			})
 		case *protocol.JobOutputRequest:
 			if r.Cancel {
 				s.Cancel(r.ID())

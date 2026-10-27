@@ -596,6 +596,17 @@ func (o JobOperation) String() string {
 	return "Cancel"
 }
 
+// ControlJobOptions carries optional details of a job control request.
+//
+// StatusMessage and StatusCode record why a job was killed, for example an
+// operator kill versus an out-of-memory kill. The Launcher only sends them
+// with OperationKill, already validated to at most 256 bytes each. To report
+// them, save them on the job's StatusMsg and StatusCode fields.
+type ControlJobOptions struct {
+	StatusMessage string
+	StatusCode    string
+}
+
 // Mount is a volume mounted into a Job.
 type Mount struct {
 	// The destination path of the mount.
@@ -858,7 +869,7 @@ type Version struct {
 
 // APIVersion is the Launcher plugin API version supported by the types defined
 // in this package.
-var APIVersion = Version{Major: 3, Minor: 9, Patch: 0}
+var APIVersion = Version{Major: 3, Minor: 10, Patch: 0}
 
 // ConfigReloadErrorType classifies config reload errors.
 type ConfigReloadErrorType int

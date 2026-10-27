@@ -247,7 +247,8 @@ func (p *InMemoryPlugin) GetJobResourceUtil(ctx context.Context, w launcher.Stre
 //   - Validating the operation is valid for the current job status
 //   - Updating job status based on the operation
 //   - Handling unsupported operations
-func (p *InMemoryPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
+//   - Recording the caller-supplied kill reason on the job
+func (p *InMemoryPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation, opts api.ControlJobOptions) {
 	var validationErr error
 	err := p.cache.Update(user, id, func(job *api.Job) *api.Job {
 		// Validate that the operation is valid for the current status
@@ -278,6 +279,8 @@ func (p *InMemoryPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter
 			job.Status = api.StatusKilled
 			exitCode := 137 // 128 + 9 (SIGKILL)
 			job.ExitCode = &exitCode
+			job.StatusMsg = opts.StatusMessage
+			job.StatusCode = opts.StatusCode
 		case api.OperationCancel:
 			// Cancel before job starts
 			job.Status = api.StatusCanceled

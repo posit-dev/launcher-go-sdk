@@ -110,7 +110,7 @@ func (p *testPlugin) GetJobs(_ context.Context, w launcher.ResponseWriter, user 
 	p.cache.WriteJobs(w, user, filter)
 }
 
-func (p *testPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation) {
+func (p *testPlugin) ControlJob(_ context.Context, w launcher.ResponseWriter, user string, id api.JobID, op api.JobOperation, _ api.ControlJobOptions) {
 	err := p.cache.Update(user, id, func(job *api.Job) *api.Job {
 		if op.ValidForStatus() != job.Status {
 			w.WriteErrorf(api.CodeInvalidJobState,
