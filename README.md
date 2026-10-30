@@ -22,7 +22,7 @@ The Launcher Go SDK provides a complete framework for building plugins that conn
 - Conformance testing - Automated behavioral tests that verify your plugin against Posit product contracts
 - Testing utilities - Mock response writers, job builders, and assertion helpers
 - Comprehensive examples - In-memory example and scheduler design guide
-- Type-safe API - Strongly typed interfaces matching the Launcher Plugin API v3.10
+- Type-safe API - Strongly typed interfaces matching the Launcher Plugin API v3.11
 
 ## Quick start
 
@@ -199,7 +199,7 @@ func TestSubmitJob(t *testing.T) {
 
 ## API version
 
-This SDK implements **Launcher Plugin API v3.10.0** (see `api.APIVersion`).
+This SDK implements **Launcher Plugin API v3.11.0** (see `api.APIVersion`).
 
 ## Stability
 
