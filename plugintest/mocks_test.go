@@ -225,8 +225,8 @@ func TestMockStreamResponseWriter_DefensiveCopies(t *testing.T) {
 
 // TestMockResponseWriter_ClusterInfoIsDeepCopied verifies that ClusterInfo()
 // returns a deep copy: the returned pointer, its slice fields, the nested
-// ImageOpt.Images slice, and each ResourceProfile's inner Limits slice are
-// all freshly allocated, so caller mutation at any level does not leak into
+// ImageOpt.Images slice, and each ResourceProfile's inner Limits and
+// Constraints slices are all freshly allocated, so caller mutation at any level does not leak into
 // the writer's stored state.
 func TestMockResponseWriter_ClusterInfoIsDeepCopied(t *testing.T) {
 	w := plugintest.NewMockResponseWriter()
@@ -235,10 +235,12 @@ func TestMockResponseWriter_ClusterInfoIsDeepCopied(t *testing.T) {
 		WithLimit("cpuCount", "4").
 		WithImage("ubuntu:24.04").
 		Build()
-	// Add a profile with its own nested Limits so we exercise the nested clone.
+	// Add a profile with its own nested Limits and Constraints so we exercise
+	// the nested clones.
 	opts.Profiles = []api.ResourceProfile{{
-		Name:   "small",
-		Limits: []api.ResourceLimit{{Type: "memory", Value: "1Gi"}},
+		Name:        "small",
+		Limits:      []api.ResourceLimit{{Type: "memory", Value: "1Gi"}},
+		Constraints: []api.PlacementConstraint{{Name: "zone", Value: "us-east-1a"}},
 	}}
 	if err := w.WriteClusterInfo(opts); err != nil {
 		t.Fatalf("WriteClusterInfo: %v", err)
@@ -256,6 +258,7 @@ func TestMockResponseWriter_ClusterInfoIsDeepCopied(t *testing.T) {
 	got.Limits = append(got.Limits, api.ResourceLimit{Type: "leak"})
 	got.ImageOpt.Images[0] = "rewritten"
 	got.Profiles[0].Limits[0].Value = "rewritten"
+	got.Profiles[0].Constraints[0].Value = "rewritten"
 
 	again := w.ClusterInfo()
 	if again == nil {
@@ -274,6 +277,10 @@ func TestMockResponseWriter_ClusterInfoIsDeepCopied(t *testing.T) {
 	if len(again.Profiles) != 1 || len(again.Profiles[0].Limits) != 1 ||
 		again.Profiles[0].Limits[0].Value != "1Gi" {
 		t.Errorf("ClusterInfo() Profiles[0].Limits leaked: %+v", again.Profiles)
+	}
+	if len(again.Profiles[0].Constraints) != 1 ||
+		again.Profiles[0].Constraints[0].Value != "us-east-1a" {
+		t.Errorf("ClusterInfo() Profiles[0].Constraints leaked: %+v", again.Profiles)
 	}
 }
 
