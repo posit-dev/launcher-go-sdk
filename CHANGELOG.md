@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `job-expiry-hours` is parsed as `float64` (was `uint`), so fractional or scientific-notation values from the Launcher (for example `0.5` for a 30-minute expiry) no longer abort the plugin at startup ([#54](https://github.com/posit-dev/launcher-go-sdk/issues/54)).
+
 ## [0.3.0] - 2026-10-23
 
 ### Added
