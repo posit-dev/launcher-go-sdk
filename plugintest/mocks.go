@@ -237,7 +237,7 @@ func (m *MockResponseWriter) Networks() []NetworkInfo {
 // cluster options, or nil if WriteClusterInfo has not been called. The
 // returned pointer, its slice fields (Constraints, Queues, Limits, Configs,
 // Profiles), the nested ImageOpt.Images slice, and each ResourceProfile's
-// inner Limits slice are all freshly allocated.
+// inner Limits and Constraints slices are all freshly allocated.
 func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -252,6 +252,7 @@ func (m *MockResponseWriter) ClusterInfo() *launcher.ClusterOptions {
 	cp.Profiles = slices.Clone(m.clusterInfo.Profiles)
 	for i := range cp.Profiles {
 		cp.Profiles[i].Limits = slices.Clone(cp.Profiles[i].Limits)
+		cp.Profiles[i].Constraints = slices.Clone(cp.Profiles[i].Constraints)
 	}
 	cp.ImageOpt.Images = slices.Clone(m.clusterInfo.ImageOpt.Images)
 	return &cp

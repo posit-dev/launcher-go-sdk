@@ -1208,7 +1208,7 @@ The plugintest package provides testing utilities for plugin development.
 
 `MockResponseWriter` and `MockStreamResponseWriter` are in-memory mocks of `launcher.ResponseWriter` and `launcher.StreamResponseWriter`. They capture every `Write*` call into private state observable through accessor methods.
 
-The accessors are safe to call concurrently with `Write*` methods — useful when a test observes captured state while the plugin under test is still streaming. Bare-noun accessors (`Errors`, `Jobs`, `Statuses`, etc.) return snapshot slices taken under a read lock; the writer never subsequently mutates already-recorded entries. Two accessors deep-copy their payload so callers may freely mutate at every level: `Networks` (the inner `Addresses` slice is cloned) and `ClusterInfo` (every slice field of `ClusterOptions`, including the nested `ImageOpt.Images` and per-`ResourceProfile` `Limits`, is cloned).
+The accessors are safe to call concurrently with `Write*` methods — useful when a test observes captured state while the plugin under test is still streaming. Bare-noun accessors (`Errors`, `Jobs`, `Statuses`, etc.) return snapshot slices taken under a read lock; the writer never subsequently mutates already-recorded entries. Two accessors deep-copy their payload so callers may freely mutate at every level: `Networks` (the inner `Addresses` slice is cloned) and `ClusterInfo` (every slice field of `ClusterOptions`, including the nested `ImageOpt.Images` and per-`ResourceProfile` `Limits` and `Constraints`, is cloned).
 
 For the full method list, helper types (`ControlResult`, `NetworkInfo`, `StatusUpdate`, etc.), and per-method aliasing notes, see the godoc:
 
